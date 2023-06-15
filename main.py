@@ -2,27 +2,18 @@ import asyncio
 from query_files_handler import QueryFilesHandler
 from query_files_scrapper import QueryFilesScrapper
 from files_processor import FilesProcessor
-import PyPDF2
 from PyPDF2 import errors
 import os
 
-def get_data_dir(data_dir_name):
-    abs_path = os.path.abspath(".")
-    data_dir = os.path.join(abs_path,data_dir_name)
-    if not os.path.exists(data_dir):
-        os.mkdir(data_dir)
-    if not os.path.exists(data_dir):
-        raise Exception()
-    return data_dir
     
 
-ALL_DATA_DIR_NAME = "data"
-EACH_QUERY_FILES_DIR_NAME = "pdfs"
-EACH_QUERY_CSV_FILE_DIR_NAME = "csv"
-CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
-DOWNLOAD = True
-MAX_FILES_TO_DOWNLOAD_FROM_QUERY = 20
-TEST = True
+ALL_DATA_DIR_NAME = "data" # the data directory in this current path , it will be created if u dont have
+EACH_QUERY_FILES_DIR_NAME = "pdfs" # for each query it will create a folder and put its downloaded files into this folder name
+EACH_QUERY_CSV_FILE_DIR_NAME = "csv" # for each query it will create a folder and in this folder we will keep the proccessed dataframe csv of this query
+CHROMEDRIVER_PATH = "/usr/bin/chromedriver" # your path to chrome
+DOWNLOAD = True # can keep at true its doesnt redownload , but it still open sellinum
+MAX_FILES_TO_DOWNLOAD_FROM_QUERY = 20 # max of files to download for the chosen query , its doesnt iterate , for the same query if the files already downloaded , it wont redownload, if u put bigger number it just add the files you didnt have
+TEST = True # not asking for input
 
 
 
@@ -64,6 +55,17 @@ async def main(download=False,max_files = 20):
                 print(e)
             print()
     
+
+
+def get_data_dir(data_dir_name):
+    abs_path = os.path.abspath(".")
+    data_dir = os.path.join(abs_path,data_dir_name)
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+    if not os.path.exists(data_dir):
+        raise Exception()
+    return data_dir
+
 
 if __name__ == "__main__":
     asyncio.run(main(download=DOWNLOAD,max_files=MAX_FILES_TO_DOWNLOAD_FROM_QUERY))
