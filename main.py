@@ -22,6 +22,7 @@ EACH_QUERY_CSV_FILE_DIR_NAME = "csv"
 CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 DOWNLOAD = True
 MAX_FILES_TO_DOWNLOAD_FROM_QUERY = 20
+TEST = True
 
 
 
@@ -31,11 +32,12 @@ async def main(download=False,max_files = 20):
     query_processed_data_dir = EACH_QUERY_CSV_FILE_DIR_NAME
     chromedriver_path = CHROMEDRIVER_PATH
 
+
     data_dir = get_data_dir(data_dir_name=data_dir_name)
     query_files_handler = QueryFilesHandler(data_dir=data_dir,query_data_dir=query_data_dir,query_processed_data_dir=query_processed_data_dir)
     query_files_scrapper =  QueryFilesScrapper(chromedriver_path=chromedriver_path)
     file_processor = FilesProcessor(data_dir=data_dir,query_data_dir=query_data_dir,query_processed_data_dir=query_processed_data_dir)
-    query_search_input = await query_files_handler.get_input_query(test=True)
+    query_search_input = await query_files_handler.get_input_query(test=TEST)
     if not isinstance(query_search_input,str):
         return
     if download:
