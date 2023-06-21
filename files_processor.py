@@ -4,6 +4,7 @@ import pandas as pd
 import PyPDF2
 import regex as re
 import json
+from pprint import pprint
 import enum
 
 judgement_id_col = "id"
@@ -104,16 +105,18 @@ class FilesProcessor:
             return None
         return index
 
-    async def area_spliting(self, text:str):
+    async def area_spliting(self, text:str,id:int):
         verdict_data_divider = "דין-פסק"
         team_versus_divider =  "ד  ג  נ"
         date_verdict_sitting = "הישיבה תאריך"
         end_spliter  = "_________________________"
         before_judges_divider = "לפני"
+        lawyers_prefix = "בשם"
 
         verdict_data_divider_index = await self.find_text_first_index_in_list(text.split("\n"),verdict_data_divider)
         if not verdict_data_divider_index:
             return False
+        
         verdict_data = "\n".join(text.split("\n")[:verdict_data_divider_index])
         verdict_text_data = "\n".join(text.split("\n")[verdict_data_divider_index:])
         
@@ -121,20 +124,25 @@ class FilesProcessor:
 
         verdict_text_area =  verdict_data_split[0]
         verdict_end_area = verdict_data_split[1]
-        
         date_splitter = verdict_data.split(date_verdict_sitting)
-        verdict_teams_data = date_splitter[0]
-        verdict_lawyer_area = date_splitter[1]
+        if len(date_splitter) == 1:
+            lawyers_start_index = await self.find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
+            verdict_lawyer_area = "\n".join(date_splitter[0].split("\n")[lawyers_start_index:])
+            verdict_teams_data = "\n".join(date_splitter[0].split("\n")[:lawyers_start_index])   
+            verdict_date_area = "None"         
+        else:
+            verdict_teams_data = date_splitter[0]
+            verdict_lawyer_area = date_splitter[1]
+            date_index = len(verdict_teams_data.split("\n"))-1
+            verdict_date_area = verdict_teams_data.split("\n")[date_index]
+            verdict_teams_data = "\n".join(verdict_teams_data.split("\n")[:date_index])
 
-
-        date_index = len(verdict_teams_data.split("\n"))-1
-        verdict_date_area = verdict_teams_data.split("\n")[date_index]
-        verdict_teams_data = "\n".join(verdict_teams_data.split("\n")[:date_index])
         team_splitter = verdict_teams_data.split(team_versus_divider)
         verdict_data_with_team1 = team_splitter[0]
         verdict_team_2_area = team_splitter[1]
     
 
+        
         title_index = 0
         verdict_title_area = verdict_data_with_team1.split("\n")[title_index]
 
@@ -168,13 +176,15 @@ class FilesProcessor:
 
     async def process_verdict_title(self,title:str): # done
         verdict_title = title.strip() 
+        # print(verdict_title)
         return verdict_title
 
     async def process_verdict_alefs(self,alefs:str): # done
         lst_alefs = []
         for alef in alefs.split("\n"):
             lst_alefs.append(alef.strip())
-        return alefs
+        # print(lst_alefs)
+        return lst_alefs
 
     async def process_verdict_judges(self,judges:str): # done
         #print("judges",judges)
@@ -183,7 +193,9 @@ class FilesProcessor:
         judges_genders = []
         # honor_prefix =  "כבוד"
         female_judge_prefix = "השופטת"
+        female_high_judge_prefix = "הנשיאה"
         male_judge_prefix = "השופט"
+        male_high_judge_prefix = "הנשיא"
         male = "male"
         female = "female"
         for judge in judges.split("\n"):
@@ -192,15 +204,20 @@ class FilesProcessor:
             last_name = judge_row[0]
             first_name = judge_row[1]
             gender = self.COLUMN_FAIL
-            if judge_row[2] == male_judge_prefix:
+            exists = False
+            if judge_row[2] == male_judge_prefix or judge_row[2] == male_high_judge_prefix:
                 gender = male
-            if judge_row[2] == female_judge_prefix:
+                exists = True
+            if judge_row[2] == female_judge_prefix or judge_row[2] == female_high_judge_prefix:
                 gender = female
-            last_name = last_name[:len(last_name)-1] # remove the '
-            judges_first_names.append(first_name)
-            judges_last_names.append(last_name)
-            judges_genders.append(gender)
+                exists=True
+            if exists:
+                last_name = last_name[:len(last_name)-1] # remove the '
+                judges_first_names.append(first_name)
+                judges_last_names.append(last_name)
+                judges_genders.append(gender)
         data = judges_first_names,judges_last_names,judges_genders
+        # print(data)
         return data
 
     async def parse_string(self,string):
@@ -211,19 +228,79 @@ class FilesProcessor:
             result.setdefault(title, []).append(content.strip())
         return result
     
+    async def teams_area_spliting(self,teams_lines:list,numbers=True):
+        team_start_signal = ":"
+        if numbers:
+            list_pattern = r"\.\s*\d+"
+        else:
+            list_pattern = r""
+
+        i = 0
+        current_team = "None" 
+        teams = {
+            current_team:[]
+        }
+        teams_extra = {
+            current_team:[]
+        }        
+        while True:
+            if team_start_signal in teams_lines[i]:
+                team_name = teams_lines[i].split(":")[1].strip()
+                rest = teams_lines[i].split(":")[0].strip()
+                teams[team_name] = []
+                teams_extra[team_name] = []
+                if len(rest) > 0:
+                    teams[team_name].append(rest)
+                current_team = team_name
+            else:
+                current = teams_lines[i].strip()
+                if len(current) > 0:
+                    teams[current_team].append(current)
+            if len(teams_lines) == i + 1:
+                break
+            i+=1
+
+        
+        del_indexes = []
+        for team in teams.keys():
+            for i,player in enumerate(teams[team]):
+                if not re.search(list_pattern,player):
+                    extra_data = player
+                    teams_extra[team].append(extra_data)
+                    # if i - 1 < 0:
+                    #     continue
+                    # teams[team][i - 1] = f"{player} " + teams[team][i - 1]
+                    del_indexes.append((team,i))
+
+        for del_ind in del_indexes:
+            team_name = del_ind[0]
+            team_del_index = del_ind[1]
+            del teams[team_name][team_del_index]
+
+
+        for team in teams.keys():
+            for i,player in enumerate(teams[team]):
+                new_text = re.sub(list_pattern, "", player).strip()
+                teams[team][i] = new_text
+
+        if len(teams['None']) == 0:
+            del teams['None']
+        if len(teams_extra['None']) == 0:
+            del teams_extra['None']
+        
+        return teams,teams_extra
+
+
     
     async def process_verdict_team_one(self,team_one:str):
-        indexes = await self.teams_area_spliting(team_one)
-        team_one_lines = team_one.split("\n")
-        index_indexes = 0
-        parsed_dict = await self.parse_string(team_one)
-        return parsed_dict
+        team_lines = team_one.split("\n")
+        team_dict,team_extra = await self.teams_area_spliting(team_lines)
+        return team_dict,team_extra
 
     async def process_verdict_team_two(self,team_two:str):
-        t = await self.parse_string(team_two)
-        print("t=",t)
-        #print("team_two=",team_two)
-        return team_two
+        team_lines = team_two.split("\n")
+        team_dict,team_extra = await self.teams_area_spliting(team_lines)
+        return team_dict,team_extra
 
     async def process_verdict_date(self,date:str): #done
         start_date = "("
@@ -240,11 +317,23 @@ class FilesProcessor:
         d = date[start_index+1:end_index].strip()
         return d
 
-    async def process_verdict_lawyers(self,lawyers:str):
-        # print("lawyers=",lawyers)
-        lay = await self.parse_string(lawyers)
-        print("lawyer",lay)
-        return lawyers
+
+    async def lawyers_spliting(self,teams_lines:list):
+        team_dict,team_extra = await self.teams_area_spliting(teams_lines,False)
+        for key in team_dict.keys():
+            for idx, lawyer in enumerate(team_dict[key]):
+                lawyers = lawyer.split(",")
+                for i,item in enumerate(lawyers):
+                    lawyers[i] = item.strip()
+                team_dict[key] = lawyers
+        return team_dict,team_extra
+
+
+
+    async def process_verdict_lawyers(self,lawyers:str):#done
+        team_dict,team_extra = await self.lawyers_spliting(lawyers.split("\n"))
+        pprint(team_dict)
+        return team_dict
 
     async def process_verdict_text(self,text:str): # done
         # print("text=",text)
@@ -255,22 +344,21 @@ class FilesProcessor:
         return "Dont Care"
 
     
-    async def teams_area_spliting(self,team_text:str):
-        indexes = []
-        for i,line in enumerate(team_text.split("\n")):
-            if ":" in line:
-                indexes.append(i)
-        return indexes
-
     async def process_list_to_str(self,lst:list) -> str:
-        l = ";".join(lst)
+        l = "[" + ";".join(lst) + "]"
         return l
 
     async def process_dict_to_str(self,dict:dict) -> str:
         # print(str(dict))
         # str_dict = json.dumps(dict)
         # str_dict = str_dict.strip()
-        return str(dict)
+        dict_string = ""
+        for key in dict.keys():
+            dict[key] =  await self.process_col_item(dict[key])
+        for key in dict.keys():
+            dict_string += key + ":" + dict[key] +";"
+        dict_string = dict_string[ :len(dict_string) - 1]
+        return dict_string
         
     async def process_str_to_dict(self,str_dict:str) -> dict:
         # d = json.loads(str_dict)
@@ -316,8 +404,8 @@ class FilesProcessor:
         tag2 = "tag2"
         return [tag1,tag2]
 
-    async def preprocess_file(self,text:str):
-        verdict_areas = await self.area_spliting(text=text)
+    async def preprocess_file(self,text:str,id:int):
+        verdict_areas = await self.area_spliting(text=text,id=id)
         if verdict_areas is False:
             return False
         
@@ -336,8 +424,8 @@ class FilesProcessor:
         title = await self.process_verdict_title(verdict_title_area)
         alefs = await self.process_verdict_alefs(verdict_alefs_area)
         judges_first_names,judges_last_names,judges_genders = await self.process_verdict_judges(verdict_judges_area)
-        team_one = await self.process_verdict_team_one(verdict_team_1_area)
-        team_two = await self.process_verdict_team_two(verdict_team_2_area)
+        team_one,team_one_extra = await self.process_verdict_team_one(verdict_team_1_area)
+        team_two,team_two_extra = await self.process_verdict_team_two(verdict_team_2_area)
         date = await self.process_verdict_date(verdict_date_area)
         lawyers = await self.process_verdict_lawyers(verdict_lawyer_area)
         text_data = await self.process_verdict_text(verdict_text_area)

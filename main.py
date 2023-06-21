@@ -3,6 +3,7 @@ from query_files_handler import QueryFilesHandler
 from query_files_scrapper import QueryFilesScrapper
 from files_processor import FilesProcessor
 from PyPDF2 import errors
+from pprint import pprint
 import os
 
     
@@ -30,12 +31,18 @@ async def build_csv_rows(queries,queries_dict,file_processor):
         print("query: ", query[::-1])
         print("num of files in query: ",len(query_files))
         print()
+        check_index = 1
         processed_query_files = []
         for i,query_file in enumerate(query_files):
+
+            if check_index is not None:
+                if check_index != i:
+                    continue
+
             file_text = await file_processor.read_data_file_text(query,query_file)
             print(f"{i}.",query_file)
             try:
-                f = await file_processor.preprocess_file(file_text)
+                f = await file_processor.preprocess_file(file_text,i)
                 row_start ={
                     COLUMN_ID:i,
                     COLUMN_FILE_NAME:query_file,
@@ -53,11 +60,8 @@ async def build_csv_rows(queries,queries_dict,file_processor):
                 continue
             except Exception as e:
                 print(e)
-            print()
-
-            break
+            print(" --------------- \n\n")
         processed_queries_files[query] = processed_query_files
-        break
     return processed_queries_files
 
 
@@ -84,7 +88,7 @@ async def main(download=False,max_files = 20):
     queries = await query_files_handler.get_all_queries()
 
     processed_queries_files = await build_csv_rows(queries,queries_dict,file_processor)
-    print(processed_queries_files)
+    pprint(processed_queries_files)
     
 
 
