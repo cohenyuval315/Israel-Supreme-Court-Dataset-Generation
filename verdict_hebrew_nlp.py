@@ -14,7 +14,7 @@ class Sentiment(enum.Enum):
     MIXED = "mixed"
 
 
-class HebrewNLP:
+class VerdictHebrewNLP:
     COLUMNS_TAGS = "tags"
     COLUMNS_SENTIMENT = "sentiment"
     COLUMNS_TEXT_BAG_OF_WORDS = "text_bag"
@@ -65,6 +65,7 @@ class HebrewNLP:
         total_stopwords.extend(itdk_stopwords)
         total_stopwords = list(set(total_stopwords))
         return total_stopwords
+    
     async def get_sentiment(self,text):
         return Sentiment.NETURAL
 
@@ -82,7 +83,6 @@ class HebrewNLP:
         words = [word for word in words if word not in self.hebrew_stopwords]
         word_counts = Counter(words)
         return word_counts
-
 
 
     async def compute_idf(self,file_name:str, bag_dict:Counter):
