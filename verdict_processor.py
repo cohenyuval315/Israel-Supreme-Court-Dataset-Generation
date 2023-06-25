@@ -6,34 +6,17 @@ import regex as re
 import json
 from pprint import pprint
 import enum
-
-judgement_id_col = "id"
-verdict_id_col = "verdict_id"
-judges_col = "judges"
-judges_genders_col = "genders"
-judgement_name_col = "name"
-prosecutor_col = "prosecutors"
-defendant_col = "defendants"
-judgement_subjects_tags_col = "tags" # 2-5 for each , string,string,string,
-sentiment_analysis_col = "sentiment" # negative neutural positive  , -1 0 , 1
+from collections import Counter
+import nltk
+from utils import remove_extra_spaces,find_text_first_index_in_list
 
 
-async def remove_extra_spaces(string):
-    # Replace multiple consecutive spaces with a single space
-    modified_string = re.sub(r'\s+', ' ', string)
-    return modified_string
 
 
-class Sentiment(enum.Enum):
-    POSITIVE = "positive"
-    NETURAL = "netural"
-    NEGATIVE = "negative"
-
-class FilesProcessor:
+class VerdictProcessor:
     COLUMN_FAIL = "None"
     COLUMN_TITLE = "title"
     COLUMS_ALEFS = "alefs"
-    # COLUMNS_JUDGES = "judges"
     COLUMNS_JUDGES_FIRST_NAMES = "judge_first_names"
     COLUMNS_JUDGES_LAST_NAMES = "judge_last_names"
     COLUMNS_JUDGES_GENDERS = "judges_genders"
@@ -43,13 +26,9 @@ class FilesProcessor:
     COLUMNS_LAWYERS = "lawyers"
     COLUMNS_TEXT = "text"
     COLUMNS_END = "end"
-
-    COLUMNS_TAGS = "tags"
-    COLUMNS_SENTIMENT = "sentiment"
-
-
+    COLUMN_DECISION = "decision"
+    COLUMN_DATA = "data"
     
-
 
     csv_columns = []
     def __init__(self,data_dir="/home/yuval/Desktop/nlp/data2",query_data_dir = "pdfs",query_processed_data_dir = "csv") -> None:
@@ -57,53 +36,10 @@ class FilesProcessor:
         self.query_data_dir = query_data_dir
         self.query_processed_data_dir = query_processed_data_dir
 
-    async def _make_path(self,query):
-        return os.path.join(self.data_dir,query,self.query_data_dir)
 
-    async def create_data_pd(self):
-        dataframe = pd.DataFrame(columns=[])
 
-    async def create_processed_file(self,dataframe:pd.DataFrame,query,file_type="csv"):
-        path = os.path.join(self.data_dir,query,self.query_processed_data_dir, query + "." + file_type)
-        if os.path.exists(path):
-            old_pd = pd.read_csv(path)
-            new_pd = pd.concat([old_pd,dataframe])
-            new_pd.drop_duplicates(inplace=True)
-            new_pd.reset_index(drop=True,inplace=True)
-            new_pd.to_csv(path,index=False)
-        else: 
-            dataframe.to_csv(path,index=False)
-
-    async def read_data_file_text(self,query:str,filename:str):
-        file_path = os.path.join(self.data_dir,query,self.query_data_dir,filename) 
-        with open(file_path, 'rb') as file:
-            reader = PyPDF2.PdfReader(file)
-            num_pages = len(reader.pages)
-            text = ''
-            for page in reader.pages:
-                text += page.extract_text()
-        return text
-    
-    async def extract_name(self,content, label):
-        pattern = f'{label}: (.+)'  # assuming the name follows the label
-        match = re.search(pattern, content)
-        if match:
-            return match.group(1)
-        else:
-            return None
         
-    async def find_text_first_index_in_list(self,lst,text,reverse=False):
-        index = -1
-        divider = text
-        if reverse:
-            divider = text[::-1]
-        for i, line in enumerate(lst):
-            if divider in line:
-                index = i
-                break
-        if index == -1:
-            return None
-        return index
+
 
     async def area_spliting(self, text:str,id:int):
         verdict_data_divider = "דין-פסק"
@@ -113,11 +49,12 @@ class FilesProcessor:
         before_judges_divider = "לפני"
         lawyers_prefix = "בשם"
 
-        verdict_data_divider_index = await self.find_text_first_index_in_list(text.split("\n"),verdict_data_divider)
+        verdict_data_divider_index = await find_text_first_index_in_list(text.split("\n"),verdict_data_divider)
         if not verdict_data_divider_index:
             return False
         
         verdict_data = "\n".join(text.split("\n")[:verdict_data_divider_index])
+        verdict_data_area = verdict_data
         verdict_text_data = "\n".join(text.split("\n")[verdict_data_divider_index:])
         
         verdict_data_split = verdict_text_data.split(end_spliter)
@@ -126,7 +63,7 @@ class FilesProcessor:
         verdict_end_area = verdict_data_split[1]
         date_splitter = verdict_data.split(date_verdict_sitting)
         if len(date_splitter) == 1:
-            lawyers_start_index = await self.find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
+            lawyers_start_index = await find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
             verdict_lawyer_area = "\n".join(date_splitter[0].split("\n")[lawyers_start_index:])
             verdict_teams_data = "\n".join(date_splitter[0].split("\n")[:lawyers_start_index])   
             verdict_date_area = "None"         
@@ -149,7 +86,7 @@ class FilesProcessor:
 
         verdict_data_with_team1 = "\n".join(verdict_data_with_team1.split("\n")[title_index + 1:])
 
-        before_judges_divider = await self.find_text_first_index_in_list(verdict_data_with_team1.split("\n"),before_judges_divider)
+        before_judges_divider = await find_text_first_index_in_list(verdict_data_with_team1.split("\n"),before_judges_divider)
         if not before_judges_divider:
             return False
         judges_and_team1 = "\n".join(verdict_data_with_team1.split("\n")[before_judges_divider:])
@@ -160,13 +97,23 @@ class FilesProcessor:
 
         judges_and_team1s = "\n".join(judges_and_team1_splitter)
 
-        teams_index = await self.find_text_first_index_in_list(judges_and_team1s.split("\n"),":")
+        teams_index = await find_text_first_index_in_list(judges_and_team1s.split("\n"),":")
         verdict_judges_area = "\n".join(judges_and_team1s.split("\n")[:teams_index])
 
         verdict_team_1_area = "\n".join(judges_and_team1s.split("\n")[teams_index:])
 
 
-        verdict_areas = (verdict_title_area, verdict_alefs_area,verdict_judges_area,verdict_team_1_area,verdict_team_2_area,verdict_date_area,verdict_lawyer_area,verdict_text_area,verdict_end_area)
+        verdict_areas = (verdict_title_area, 
+                         verdict_alefs_area,
+                         verdict_judges_area,
+                         verdict_team_1_area,
+                         verdict_team_2_area,
+                         verdict_date_area,
+                         verdict_lawyer_area,
+                         verdict_text_area,
+                         verdict_end_area,
+                         verdict_data_area,
+                         )
         for i in range(len(verdict_areas)):
             if len(verdict_areas[i]) == 0:
                 return False
@@ -220,15 +167,9 @@ class FilesProcessor:
         # print(data)
         return data
 
-    async def parse_string(self,string):
-        pattern = r'([^:\n]+):\s*(\w+)'
-        matches = re.findall(pattern, string)
-        result = {}
-        for content,title  in matches:
-            result.setdefault(title, []).append(content.strip())
-        return result
-    
+
     async def teams_area_spliting(self,teams_lines:list,numbers=True):
+        
         team_start_signal = ":"
         if numbers:
             list_pattern = r"\.\s*\d+"
@@ -243,7 +184,10 @@ class FilesProcessor:
         teams_extra = {
             current_team:[]
         }        
+        
         while True:
+            if not teams_lines[i]:
+                break
             if team_start_signal in teams_lines[i]:
                 team_name = teams_lines[i].split(":")[1].strip()
                 rest = teams_lines[i].split(":")[0].strip()
@@ -259,7 +203,6 @@ class FilesProcessor:
             if len(teams_lines) == i + 1:
                 break
             i+=1
-
         
         del_indexes = []
         for team in teams.keys():
@@ -271,17 +214,17 @@ class FilesProcessor:
                     #     continue
                     # teams[team][i - 1] = f"{player} " + teams[team][i - 1]
                     del_indexes.append((team,i))
-
-        for del_ind in del_indexes:
-            team_name = del_ind[0]
-            team_del_index = del_ind[1]
-            del teams[team_name][team_del_index]
-
-
-        for team in teams.keys():
-            for i,player in enumerate(teams[team]):
-                new_text = re.sub(list_pattern, "", player).strip()
-                teams[team][i] = new_text
+        # print("hey2")
+        # for del_ind in del_indexes:
+        #     team_name = del_ind[0]
+        #     team_del_index = del_ind[1]
+        #     del teams[team_name][team_del_index]
+        # print("hey1")
+        
+        # for team in teams.keys():
+        #     for i,player in enumerate(teams[team]):
+        #         new_text = re.sub(list_pattern, "", player).strip()
+        #         teams[team][i] = new_text
 
         if len(teams['None']) == 0:
             del teams['None']
@@ -291,14 +234,14 @@ class FilesProcessor:
         return teams,teams_extra
 
 
-    
+
     async def process_verdict_team_one(self,team_one:str):
-        team_lines = team_one.split("\n")
+        team_lines = await self.remove_empty_strings(team_one.split("\n"))
         team_dict,team_extra = await self.teams_area_spliting(team_lines)
         return team_dict,team_extra
 
     async def process_verdict_team_two(self,team_two:str):
-        team_lines = team_two.split("\n")
+        team_lines = await self.remove_empty_strings(team_two.split("\n"))
         team_dict,team_extra = await self.teams_area_spliting(team_lines)
         return team_dict,team_extra
 
@@ -317,8 +260,12 @@ class FilesProcessor:
         d = date[start_index+1:end_index].strip()
         return d
 
+    async def remove_empty_strings(self,lst:list):
+        return [i for i in lst if len(i) > 0]
+            
 
     async def lawyers_spliting(self,teams_lines:list):
+        teams_lines = await self.remove_empty_strings(teams_lines)
         team_dict,team_extra = await self.teams_area_spliting(teams_lines,False)
         for key in team_dict.keys():
             for idx, lawyer in enumerate(team_dict[key]):
@@ -332,17 +279,138 @@ class FilesProcessor:
 
     async def process_verdict_lawyers(self,lawyers:str):#done
         team_dict,team_extra = await self.lawyers_spliting(lawyers.split("\n"))
-        pprint(team_dict)
+        # pprint(team_dict)
         return team_dict
 
-    async def process_verdict_text(self,text:str): # done
-        # print("text=",text)
-        return "verdict text" # CHANGE TO TEXT
+    async def process_verdict_text(self,text:str,alefs): # done
+        text_lines = await remove_extra_spaces(text)
+        text_lines = text_lines.split("\n")
+        text_lines = await self.remove_empty_strings(text_lines)
+        # list_pattern = r"\.\s*\d+^"
+        # data =  re.split(list_pattern,text)
+
+        verdict_accept_decisions_words = [           
+            "לקבל",
+            "מקבלים",
+            "להסכים",
+            "מסכימים",
+            "מקבל",
+            "מקבלת",
+            "מאשרת",
+            "מסכימה",
+            "מסכים",
+            "לאשר",
+            "מאשר",
+            "מאשרים",
+        ]
+
+        verdict_deny_decisions_words = [
+            "לדחות",
+            "נדחה",
+            "נדחת",
+            "לסרב" ,    
+            "דוחה",
+            "מסרבים",
+            "מסרבת",
+            "מסרב" ,     
+        ]
+        verdict_decision_suffix = [
+            "טענה",
+            "טענת",
+            "טענתו",
+            "טענת",
+            "טענתם",
+            "טענות",
+            "בקשת",
+            "בקשות",
+            "בקשה",
+            "עורעור",
+            "ערעורו",
+            "ערעורה",
+            "בקשתו",
+            "בקשת",
+        ]
+        verdict_finishers = [
+            "סוף דבר",
+        ]
+
+        length = len(text_lines)
+        l = length / 4
+        max_index = -l
+        index = -1
+        
+
+        indexes = []
+        while index > max_index:
+            l = text_lines[index]
+            for item in verdict_accept_decisions_words:
+                if item in l:
+                    indexes.append(index)
+
+            for item in verdict_deny_decisions_words:
+                if item in l:
+                    indexes.append(index)
+
+            for item in verdict_decision_suffix:
+                if item in l:
+                    indexes.append(index)             
+
+            for item in verdict_finishers:
+                if item in l:
+                    indexes.append(index)                                 
+            
+            index -= 1
+
+        if len(indexes) != 0:
+            min_index = min(indexes)
+            min_index -= 10
+            decision_area = "\n".join(text_lines[:min_index])
+            text_area = "\n".join(text_lines[:min_index * - 1])
+            return text_area,decision_area
+        else:
+            decision_area = ""
+            text_area = "\n".join(text_lines)
+            return text_area,decision_area
+        
 
     async def process_verdict_end(self,end:str): # None
         # print("end=",end)
-        return "Dont Care"
+        return end
 
+    async def process_verdict_decision(self,decision:str):
+
+        verdict_deny_decisions_words = [
+            "לדחות",
+            "נדחה",
+            "נדחת",
+            "לסרב" ,    
+            "דוחה",
+            "מסרבים",
+            "מסרבת",
+            "מסרב" ,     
+        ]
+        verdict_decision_suffix = [
+            "טענה",
+            "טענת",
+            "טענתו",
+            "טענת",
+            "טענתם",
+            "טענות",
+            "בקשת",
+            "בקשות",
+            "בקשה",
+            "עורעור",
+            "ערעורו",
+            "ערעורה",
+            "בקשתו",
+            "בקשת",
+        ]
+        verdict_finishers = [
+            "סוף דבר",
+        ]
+
+
+        return decision
     
     async def process_list_to_str(self,lst:list) -> str:
         l = "[" + ";".join(lst) + "]"
@@ -396,15 +464,11 @@ class FilesProcessor:
         
         return self.COLUMN_FAIL
         
-    async def get_sentiment(self,text):
-        return Sentiment.NETURAL
 
-    async def get_tags(self,text):
-        tag1 = "tag1"
-        tag2 = "tag2"
-        return [tag1,tag2]
+        
 
-    async def preprocess_file(self,text:str,id:int):
+
+    async def preprocess_file(self,file_name:str,text:str,id:int):
         verdict_areas = await self.area_spliting(text=text,id=id)
         if verdict_areas is False:
             return False
@@ -417,22 +481,28 @@ class FilesProcessor:
         verdict_date_area,
         verdict_lawyer_area,
         verdict_text_area,
-        verdict_end_area) = verdict_areas
+        verdict_end_area,
+        verdict_data_area,
+        ) = verdict_areas
+        
+        
+            
 
-
-
+        
         title = await self.process_verdict_title(verdict_title_area)
         alefs = await self.process_verdict_alefs(verdict_alefs_area)
         judges_first_names,judges_last_names,judges_genders = await self.process_verdict_judges(verdict_judges_area)
+        
+
+
         team_one,team_one_extra = await self.process_verdict_team_one(verdict_team_1_area)
         team_two,team_two_extra = await self.process_verdict_team_two(verdict_team_2_area)
+        
         date = await self.process_verdict_date(verdict_date_area)
         lawyers = await self.process_verdict_lawyers(verdict_lawyer_area)
-        text_data = await self.process_verdict_text(verdict_text_area)
+        text_data,decision = await self.process_verdict_text(verdict_text_area,alefs)
+        decision = await self.process_verdict_decision(decision)
         end = await self.process_verdict_end(verdict_end_area)
-
-        tags = await self.get_tags(text_data)
-        sentiment = await self.get_sentiment(text_data)
 
         
         title = await self.process_col_item(title)
@@ -447,10 +517,7 @@ class FilesProcessor:
         lawyers =  await self.process_col_item(lawyers)
         text_data =  await self.process_col_item(text_data)
         end =  await self.process_col_item(end)
-
-
-        tags = await self.process_col_item(tags)
-        sentiment = await self.process_col_item(sentiment)
+        
 
         columns = {
             self.COLUMN_TITLE :title,
@@ -464,245 +531,12 @@ class FilesProcessor:
             self.COLUMNS_LAWYERS:lawyers,
             self.COLUMNS_TEXT:text_data,
             self.COLUMNS_END:end,
-            self.COLUMNS_TAGS:tags,
-            self.COLUMNS_SENTIMENT:sentiment,
+            self.COLUMN_DECISION:decision,
+            self.COLUMN_DATA:text_data
+            # self.COLUMNS_BAG_OF_WORDS:bag_of_words,
+            # self.COLUMNS_TEXT_BAG_OF_WORDS:text_bag_of_words,
         }
         return columns
-
-
-        return
-        lines = text.strip().split('\n')
-        lines = [line[::-1] for line in lines]
-        verdict_title = lines[0]
-        alefs = []
-        lines = lines[1:]
-        honor_prefix =  "כבוד"
-        before_judges_divider1 = "ינפל :"
-        before_judges_divider2 = "לפני :"
-        female_judge_prefix = "תטפושה"
-        male_judge_prefix = "טפושה"
-        female_judge_prefix = "השופטת"
-        male_judge_prefix = "השופט"
-        date_verdict_sitting = "הישיבה תאריך"
-
-        verdict_divider = "דין-פסק"
         
-
-        before_judges_start_index =  await self.find_text_first_index_in_list(lines,before_judges_divider1)
-        if before_judges_start_index is None:
-            print("no index for before")
-            return        
-        
-        verdict_date = None
-        print(alefs)
-        print(judges)
-        print(genders)
-        if len(judges) == 0:
-            return False
-        if len(alefs) == 0:
-            return False
-        if len(genders) == 0:
-            return False
-
-        for line in lines:
-            # print(line)
-            if date_verdict_sitting[::-1] in line:
-                verdict_date = line[::-1].split(" ")[0]
-        if not verdict_date:
-            return False
-        
-        print(verdict_date)
-
-
-        spliter = text.split(verdict_divider)
-        verdict_text = spliter[1]
-        verdict_data = spliter[0]
-        #print(verdict_data)
-        versus_divider =  "ד  ג  נ"
-        spliter_data = verdict_data.split(versus_divider)
-        team1 = spliter_data[0]
-        team2 = spliter_data[1]
-        
-        spl = verdict_text.split("_________________________")
-        l_s = len(spl)
-        print(l_s)
-        print(spl[1])
-        
-
-
-        male_petitioners = "העותרים:"
-        male_petitioner =  "העותר:"
-        female_petitioner = "העותרת:"
-        female_petitioners = "העותרות:"
-
-        male_appealer = "המערער:"
-        male_appealers = "המערערים:"
-        female_appealer = "המערערת:"
-        female_appealers = "המערערות:"
-        
-        male_requester = "המבקש:"
-        female_requester = "המבקשת:"
-        male_requesters = "המבקשים:"
-        female_requesters = "המבקשות:"
-        
-
-        
-        if len(alefs) > 1:
-            pass
-
-        "versus"
-
-        appealr_and = "והמשיבים"
-        versus_small = "כשנגד:"
-
-            
-
-        'המערער בע"א'
-        'המערערת בע"א'
-        'המערערים בע"א'
-        'המערערות בע"א'
-
-        'העותרים בבג"ץ'
-        'העותרות בבג"ץ'
-        'העותר בבג"ץ'
-        'העותרת בבג"ץ'
-
-        return
-
-
-
-
-
-        # if len(lines[0].split(before_judges_divider)) > 1:
-        #     pass
-        # return
-
-        
-
-        # print(before_judges_start_index)
-        # l = lines[before_judges_start_index]
-
-        # print(l)
-
-        # print(lines[before_judges_start_index].split(before_judges_divider))[1:]
-
-        # appealers_divider_multiple = "תורערעמה:"
-        # appealers_divider_multiple = "םירערעמה:"
-        # appealers_divider_single_male = "רערעמה :"
-        # appealers_divider_single_female = "תרערעמה :"
-
-
-        "בשם העותר:"
-        "בשם העותרת:"
-        "בשם העותרים:"
-        "בשם העותרות:"
-
- 
-        "בשם המבקשת:"
-        "בשם המבקש:"
-        "בשם המבקשים:"
-        "בשם המבקשות:"
-
-        "בשם המשיב:"
-        "בשם המשיבה:"
-        "בשם המשיבות:"
-        "בשם המשיבים:"
-        "המשיב:"
-        "המשיבה:"
-        "המשיבים:"
-        "המשיבות:"
-
-
-        
-
-
-
-        'המשיבים בע"א'
-        'המשיבות בע"א'
-        'המשיב בע"א'
-        'המשיבה בע"א'
-
-        "בשם המערערות:"
-
-        # before_judges_end_index_appealer_start_index = await self.find_text_first_index_in_list(lines,appealers_divider_single) or  await self.find_text_first_index_in_list(lines,appealers_divider_multiple)
-
-
-
-        appealer_end_index = -1
-
-
-        # for l in lines:
-        #     print(l)
-            
-        
-
-
-        lawyer_prefix = 'וע"ד'
-
-        
-        
-        
-        
-        index = -1
-        for i,line in enumerate(lines):
-            if verdict_divider[::-1] in line:
-                index = i
-                break
-        if index == -1:
-            print("fail")
-            return
-
-        verdit_data = lines[:index]
-        verdit_text = lines[index:]
-
-        
-        
-
-
-
-        versus_divider = "נ  ג  ד"
-
-        replyer_divider1 = "םיבישמה:"
-        replyer_divider2 = "בישמה:"
-        replyer_divider3 = "הבישמה:"
-
-        date_of_sitting = "ךיראת הבישיה :"
-
-        in_appealers = "םשב רערעמה :"
-
-        in_replyers_divider1 = "םשב םיבישמה"
-        in_replyers_divider2 = "םשב םיבישמה"
-        in_replyers_divider3 = "םשב בישמה"
-        in_replyers_divider4 = "םשב הבישמה"
-        in_replyers_divider_end = ":"
-        in_replyers_divider_end_multiple = "-"
-        
-        
-
-        index = -1
-        for i, line in enumerate(verdit_data):
-            if versus_divider in line:
-                index = i
-                break
-        if index == -1:
-            print("fail")
-        verdit_title = verdit_data[0]
-        verdit_ayin_alef = verdit_data[1]
-        verdit_data = verdit_data[2:]
-        
-        # print(verdit_data)
-
-
-
-        lines = [line for line in lines if re.match(judge_prefix[::-1],line) is not None]
-        
-        # for line in lines:
-        #     print(line.split(" "))
-        # print(lines)
-        # 
-        # print( == "דובכ")
-        # match = re.match("דובכ",lines[4])
-        # print(match)
-        # print(lines[4])
         
 

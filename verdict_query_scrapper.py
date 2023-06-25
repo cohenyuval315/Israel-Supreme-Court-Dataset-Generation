@@ -4,7 +4,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 import asyncio
 
-class QueryFilesScrapper:
+class VerdictQueryScrapper:
     SEARCH_URL = "https://supreme.court.gov.il/Pages/fullsearch.aspx"
     DOWNLOAD_URL = "https://supremedecisions.court.gov.il/"
     DOWNLOAD_TYPES = ['סוג מסמך: פסק-דין','סוג מסמך: החלטה','סוג מסמך: תקצירים','סוג מסמך: צו','סוג מסמך: צו על תנאי','סוג מסמך: צו ביניים','סוג מסמך: פסקי דין באנגלית','סוג מסמך: פד"י']

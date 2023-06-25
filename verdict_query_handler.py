@@ -3,14 +3,15 @@ import urllib.request
 
 
 
-class QueryFilesHandler():
-    TEST_QUERY_INPUT = "דירות"
+class VerdictQueryHandler():
+    
     QUERY_PROMPT = "write 'exit' to leave else: \n please enter query: \n\n"
-    def __init__(self,data_dir,query_data_dir,query_processed_data_dir) -> None:
+    def __init__(self,data_dir,query_data_dir,query_processed_data_dir,query_test_input=None) -> None:
         self.data_dir = data_dir
         self.query_data_dir = query_data_dir
         self.query_processed_data_dir = query_processed_data_dir
         self.queries_dict = self.build_queries_dict()
+        self.query_test_input = query_test_input or "דירות"
 
     def build_queries_dict(self,file_type="pdf"):
         result_dict = {}
@@ -34,7 +35,7 @@ class QueryFilesHandler():
         
     async def get_input_query(self,test=False):
         if test is True:
-            return self.TEST_QUERY_INPUT
+            return self.query_test_input
         search_input = input(self.QUERY_PROMPT)
         if search_input == "exit":
             return None
