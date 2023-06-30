@@ -10,6 +10,18 @@ from collections import Counter
 import nltk
 from utils import remove_extra_spaces,find_text_first_index_in_list
 
+from transformers import AutoTokenizer, AutoModel
+tokenizer = AutoTokenizer.from_pretrained("avichr/heBERT")
+model = AutoModel.from_pretrained("avichr/heBERT")
+    
+from transformers import pipeline
+
+sentiment_analysis = pipeline(
+    "sentiment-analysis",
+    model="avichr/heBERT_sentiment_analysis",
+    tokenizer="avichr/heBERT_sentiment_analysis",
+    return_all_scores = True
+)
 
 
 
@@ -283,8 +295,8 @@ class VerdictProcessor:
         return team_dict
 
     async def process_verdict_text(self,text:str,alefs): # done
-        text_lines = await remove_extra_spaces(text)
-        text_lines = text_lines.split("\n")
+        text_lines = text.split("\n")
+        text_lines = [await remove_extra_spaces(t) for t in text_lines]
         text_lines = await self.remove_empty_strings(text_lines)
         # list_pattern = r"\.\s*\d+^"
         # data =  re.split(list_pattern,text)
@@ -333,23 +345,43 @@ class VerdictProcessor:
         verdict_finishers = [
             "סוף דבר",
         ]
-
+        
         length = len(text_lines)
         l = length / 4
-        max_index = -l
+        max_index = l * -1
         index = -1
         
 
         indexes = []
+        for_sure_indexes= []
         while index > max_index:
             l = text_lines[index]
             for item in verdict_accept_decisions_words:
                 if item in l:
                     indexes.append(index)
+                    for suffix in verdict_decision_suffix:                        
+                        if index + 1 != 0:
+                            continue
+                        if suffix in l:
+                            for_sure_indexes.append(index)
+                        if suffix in text_lines[index-1]:
+                            for_sure_indexes.append(index-1)   
+                        if suffix in text_lines[index+1]:
+                            for_sure_indexes.append(index)
+
 
             for item in verdict_deny_decisions_words:
                 if item in l:
-                    indexes.append(index)
+                    for suffix in verdict_decision_suffix:                        
+                        if index + 1 != 0:
+                            continue
+                        if suffix in l:
+                            for_sure_indexes.append(index)
+                        if suffix in text_lines[index-1]:
+                            for_sure_indexes.append(index-1)   
+                        if suffix in text_lines[index+1]:
+                            for_sure_indexes.append(index)
+                
 
             for item in verdict_decision_suffix:
                 if item in l:
@@ -357,15 +389,30 @@ class VerdictProcessor:
 
             for item in verdict_finishers:
                 if item in l:
-                    indexes.append(index)                                 
+                    indexes.append(index)    
+                    for suffix in verdict_decision_suffix:                        
+                        if index + 1 != 0:
+                            continue
+                        if suffix in l:
+                            for_sure_indexes.append(index)
+                        if suffix in text_lines[index-1]:
+                            for_sure_indexes.append(index-1)   
+                        if suffix in text_lines[index+1]:
+                            for_sure_indexes.append(index)
+
+                                             
             
             index -= 1
-
+        # print(indexes)
+        decision_area = "\n".join(text_lines[-100:])
+        print(len(decision_area))
+        return text_lines,decision_area
         if len(indexes) != 0:
             min_index = min(indexes)
             min_index -= 10
-            decision_area = "\n".join(text_lines[:min_index])
-            text_area = "\n".join(text_lines[:min_index * - 1])
+            decision_area = "\n".join(text_lines[min_index:])
+            print(len(decision_area))
+            text_area = "\n".join(text_lines[min_index * - 1:])
             return text_area,decision_area
         else:
             decision_area = ""
@@ -408,9 +455,59 @@ class VerdictProcessor:
         verdict_finishers = [
             "סוף דבר",
         ]
+        
+        
+        if len(decision) > 512:
+            num_times = int(float(len(decision)) / 512.0)
+            # num_times = int(num_times/ 2) 
+            total_netural_score = 0.0
+            total_positive_score = 0.0
+            total_negative_score = 0.0
+            start = 0
+            end = 512
+            for i in range(num_times):
+                se = sentiment_analysis(decision[start:end])
+                start = end
+                end += 512
+                netural_dict = se[0][0]
+                positive_dict = se[0][1]
+                negative_dict = se[0][2]
 
+                netural_score = netural_dict['score']
+                positive_score = positive_dict['score']
+                negative_score = negative_dict['score']
 
-        return decision
+                total_netural_score += netural_score
+                total_positive_score += positive_score
+                total_negative_score += negative_score
+            total_netural_score = total_netural_score / num_times
+            total_positive_score = total_positive_score / num_times
+            total_negative_score = total_negative_score / num_times
+
+        else:
+            se = sentiment_analysis(decision)
+            netural_dict = se[0][0]
+            positive_dict = se[0][1]
+            negative_dict = se[0][2]
+
+            total_netural_score = netural_dict['score']
+            total_positive_score = positive_dict['score']
+            total_negative_score = negative_dict['score']            
+
+        des = "None"
+        # total_negative_score = total_negative_score / 4
+        # total_positive_score = total_positive_score * 20
+        # total_netural_score = total_netural_score
+        print("negative:",total_negative_score,",netural:",total_netural_score,"positive:",total_positive_score)
+        if total_negative_score > total_positive_score and total_negative_score > total_netural_score:
+            des = "negative"
+        if total_positive_score > total_negative_score and total_positive_score > total_netural_score:
+            des = "positive"
+        if total_netural_score > total_positive_score and total_netural_score > total_negative_score:
+            des = "netural"           
+                 
+        print(des)
+        return des
     
     async def process_list_to_str(self,lst:list) -> str:
         l = "[" + ";".join(lst) + "]"

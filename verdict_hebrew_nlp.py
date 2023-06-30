@@ -69,10 +69,6 @@ class VerdictHebrewNLP:
     async def get_sentiment(self,text):
         return Sentiment.NETURAL
 
-    async def get_tags(self,text):
-        tag1 = "tag1"
-        tag2 = "tag2"
-        return [tag1,tag2]
 
     async def get_bag_of_words(self,text:str):
         pattern = r'[^א-ת\s-]'
@@ -115,6 +111,18 @@ class VerdictHebrewNLP:
 
     async def process_bag(self,file_name:str,bag_dict):
         await self.compute_idf(file_name,bag_dict) # add to total documents
+    
+    async def single_process_bag(self,file_name:str,bag_dict):
+        await self.compute_idf(file_name,bag_dict) # add to total documents
         tf_bag_dict = await self.compute_tf(bag_dict)
         tf_idf_dict = await self.compute_tf_idf(tf_bag_dict)
-        return tf_bag_dict,tf_idf_dict
+        return tf_bag_dict,tf_idf_dict        
+    
+    async def get_tags(self,td_idf_bag:dict):
+        sorted_values = dict(sorted(td_idf_bag.items(), key=lambda item: item[1]))
+        tags = []
+        scores = []
+        for tag,value in sorted_values.items():
+            tags.append(tag)
+            scores.append(value)
+        return tags,scores
