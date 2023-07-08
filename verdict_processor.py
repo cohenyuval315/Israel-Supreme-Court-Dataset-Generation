@@ -8,56 +8,45 @@ from pprint import pprint
 import enum
 from collections import Counter
 import nltk
-from utils import remove_extra_spaces,find_text_first_index_in_list
-
-from transformers import AutoTokenizer, AutoModel
-tokenizer = AutoTokenizer.from_pretrained("avichr/heBERT")
-model = AutoModel.from_pretrained("avichr/heBERT")
-    
-from transformers import pipeline
-
-sentiment_analysis = pipeline(
-    "sentiment-analysis",
-    model="avichr/heBERT_sentiment_analysis",
-    tokenizer="avichr/heBERT_sentiment_analysis",
-    return_all_scores = True
-)
-
+from utils import remove_extra_spaces,find_text_first_index_in_list,remove_digits_and_periods,remove_empty_strings
 
 
 class VerdictProcessor:
     COLUMN_FAIL = "None"
     COLUMN_TITLE = "title"
     COLUMS_ALEFS = "alefs"
+    COLUMN_TEAM_ONE_NAMES = "team_one_names"
+    COLUMN_TEAM_TWO_NAMES = "team_two_names"
     COLUMNS_JUDGES_FIRST_NAMES = "judge_first_names"
     COLUMNS_JUDGES_LAST_NAMES = "judge_last_names"
     COLUMNS_JUDGES_GENDERS = "judges_genders"
     COLUMN_TEAM_ONE = "team_one"
     COLUMN_TEAM_TWO = "team_two"
     COLUMN_DATE = "date"
+    COLUMNS_LAWYERS_TEAMS = "lawyers_teams_names"
     COLUMNS_LAWYERS = "lawyers"
     COLUMNS_TEXT = "text"
     COLUMNS_END = "end"
     COLUMN_DECISION = "decision"
     COLUMN_DATA = "data"
     
+    COLUMN_TEAM_ONE_EXTRA_NAMES = "team_one_extra_names"
+    COLUMN_TEAM_ONE_EXTRA = "team_one_extra"
+    COLUMN_TEAM_TWO_EXTRA_NAMES = "team_two_extra_names"
+    COLUMN_TEAM_TWO_EXTRA = "team_two_extra"
+
 
     csv_columns = []
-    def __init__(self,data_dir="/home/yuval/Desktop/nlp/data2",query_data_dir = "pdfs",query_processed_data_dir = "csv") -> None:
+    def __init__(self,data_dir,query_data_dir,query_processed_data_dir) -> None:
         self.data_dir = data_dir
         self.query_data_dir = query_data_dir
         self.query_processed_data_dir = query_processed_data_dir
-
-
-
-        
 
 
     async def area_spliting(self, text:str,id:int):
         verdict_data_divider = "דין-פסק"
         team_versus_divider =  "ד  ג  נ"
         date_verdict_sitting = "הישיבה תאריך"
-        end_spliter  = "_________________________"
         before_judges_divider = "לפני"
         lawyers_prefix = "בשם"
 
@@ -66,13 +55,6 @@ class VerdictProcessor:
             return False
         
         verdict_data = "\n".join(text.split("\n")[:verdict_data_divider_index])
-        verdict_data_area = verdict_data
-        verdict_text_data = "\n".join(text.split("\n")[verdict_data_divider_index:])
-        
-        verdict_data_split = verdict_text_data.split(end_spliter)
-
-        verdict_text_area =  verdict_data_split[0]
-        verdict_end_area = verdict_data_split[1]
         date_splitter = verdict_data.split(date_verdict_sitting)
         if len(date_splitter) == 1:
             lawyers_start_index = await find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
@@ -89,29 +71,19 @@ class VerdictProcessor:
         team_splitter = verdict_teams_data.split(team_versus_divider)
         verdict_data_with_team1 = team_splitter[0]
         verdict_team_2_area = team_splitter[1]
-    
-
-        
         title_index = 0
         verdict_title_area = verdict_data_with_team1.split("\n")[title_index]
-
-
         verdict_data_with_team1 = "\n".join(verdict_data_with_team1.split("\n")[title_index + 1:])
-
         before_judges_divider = await find_text_first_index_in_list(verdict_data_with_team1.split("\n"),before_judges_divider)
         if not before_judges_divider:
             return False
         judges_and_team1 = "\n".join(verdict_data_with_team1.split("\n")[before_judges_divider:])
         verdict_alefs_area = "\n".join(verdict_data_with_team1.split("\n")[:before_judges_divider])
-
         judges_and_team1_splitter = judges_and_team1.split("\n")
         judges_and_team1_splitter[0] = judges_and_team1_splitter[0].split(":")[:len(judges_and_team1_splitter[0].split(":"))-1][0]
-
         judges_and_team1s = "\n".join(judges_and_team1_splitter)
-
         teams_index = await find_text_first_index_in_list(judges_and_team1s.split("\n"),":")
         verdict_judges_area = "\n".join(judges_and_team1s.split("\n")[:teams_index])
-
         verdict_team_1_area = "\n".join(judges_and_team1s.split("\n")[teams_index:])
 
 
@@ -122,35 +94,28 @@ class VerdictProcessor:
                          verdict_team_2_area,
                          verdict_date_area,
                          verdict_lawyer_area,
-                         verdict_text_area,
-                         verdict_end_area,
-                         verdict_data_area,
+                         text
                          )
         for i in range(len(verdict_areas)):
             if len(verdict_areas[i]) == 0:
                 return False
-            
         return verdict_areas
     
 
     async def process_verdict_title(self,title:str): # done
-        verdict_title = title.strip() 
-        # print(verdict_title)
+        verdict_title = title.strip()
         return verdict_title
 
     async def process_verdict_alefs(self,alefs:str): # done
         lst_alefs = []
         for alef in alefs.split("\n"):
             lst_alefs.append(alef.strip())
-        # print(lst_alefs)
         return lst_alefs
 
     async def process_verdict_judges(self,judges:str): # done
-        #print("judges",judges)
         judges_first_names = []
         judges_last_names = []
         judges_genders = []
-        # honor_prefix =  "כבוד"
         female_judge_prefix = "השופטת"
         female_high_judge_prefix = "הנשיאה"
         male_judge_prefix = "השופט"
@@ -158,7 +123,7 @@ class VerdictProcessor:
         male = "male"
         female = "female"
         for judge in judges.split("\n"):
-            normal_judge= await remove_extra_spaces(judge)
+            normal_judge= remove_extra_spaces(judge)
             judge_row = normal_judge.split(" ")
             last_name = judge_row[0]
             first_name = judge_row[1]
@@ -171,12 +136,11 @@ class VerdictProcessor:
                 gender = female
                 exists=True
             if exists:
-                last_name = last_name[:len(last_name)-1] # remove the '
+                last_name = last_name[:len(last_name)-1]
                 judges_first_names.append(first_name)
                 judges_last_names.append(last_name)
                 judges_genders.append(gender)
         data = judges_first_names,judges_last_names,judges_genders
-        # print(data)
         return data
 
 
@@ -222,21 +186,7 @@ class VerdictProcessor:
                 if not re.search(list_pattern,player):
                     extra_data = player
                     teams_extra[team].append(extra_data)
-                    # if i - 1 < 0:
-                    #     continue
-                    # teams[team][i - 1] = f"{player} " + teams[team][i - 1]
                     del_indexes.append((team,i))
-        # print("hey2")
-        # for del_ind in del_indexes:
-        #     team_name = del_ind[0]
-        #     team_del_index = del_ind[1]
-        #     del teams[team_name][team_del_index]
-        # print("hey1")
-        
-        # for team in teams.keys():
-        #     for i,player in enumerate(teams[team]):
-        #         new_text = re.sub(list_pattern, "", player).strip()
-        #         teams[team][i] = new_text
 
         if len(teams['None']) == 0:
             del teams['None']
@@ -247,15 +197,21 @@ class VerdictProcessor:
 
 
 
-    async def process_verdict_team_one(self,team_one:str):
-        team_lines = await self.remove_empty_strings(team_one.split("\n"))
+    async def process_verdict_team(self,team:str):
+        team_lines = remove_empty_strings(team.split("\n"))
         team_dict,team_extra = await self.teams_area_spliting(team_lines)
-        return team_dict,team_extra
+        values = []
+        extra = []
 
-    async def process_verdict_team_two(self,team_two:str):
-        team_lines = await self.remove_empty_strings(team_two.split("\n"))
-        team_dict,team_extra = await self.teams_area_spliting(team_lines)
-        return team_dict,team_extra
+        for key in team_dict.keys():
+            values.append(team_dict[key])
+
+        for key in team_extra.keys():
+            extra.append(team_extra[key])
+
+        keys = list(team_dict.keys())
+        extra_keys = list(team_extra.keys())
+        return keys,values,extra_keys,extra
 
     async def process_verdict_date(self,date:str): #done
         start_date = "("
@@ -272,12 +228,9 @@ class VerdictProcessor:
         d = date[start_index+1:end_index].strip()
         return d
 
-    async def remove_empty_strings(self,lst:list):
-        return [i for i in lst if len(i) > 0]
-            
 
     async def lawyers_spliting(self,teams_lines:list):
-        teams_lines = await self.remove_empty_strings(teams_lines)
+        teams_lines = remove_empty_strings(teams_lines)
         team_dict,team_extra = await self.teams_area_spliting(teams_lines,False)
         for key in team_dict.keys():
             for idx, lawyer in enumerate(team_dict[key]):
@@ -289,135 +242,29 @@ class VerdictProcessor:
 
 
 
-    async def process_verdict_lawyers(self,lawyers:str):#done
+    async def process_verdict_lawyers(self,lawyers:str): # done
         team_dict,team_extra = await self.lawyers_spliting(lawyers.split("\n"))
-        # pprint(team_dict)
-        return team_dict
+        values = []
+        extra = []
 
-    async def process_verdict_text(self,text:str,alefs): # done
-        text_lines = text.split("\n")
-        text_lines = [await remove_extra_spaces(t) for t in text_lines]
-        text_lines = await self.remove_empty_strings(text_lines)
-        # list_pattern = r"\.\s*\d+^"
-        # data =  re.split(list_pattern,text)
+        for key in team_dict.keys():
+            lst = team_dict[key]
+            # lst = [l for l in lst if len(l.split(" ")) < 4]
+            values.append(lst)
 
-        verdict_accept_decisions_words = [           
-            "לקבל",
-            "מקבלים",
-            "להסכים",
-            "מסכימים",
-            "מקבל",
-            "מקבלת",
-            "מאשרת",
-            "מסכימה",
-            "מסכים",
-            "לאשר",
-            "מאשר",
-            "מאשרים",
-        ]
-
-        verdict_deny_decisions_words = [
-            "לדחות",
-            "נדחה",
-            "נדחת",
-            "לסרב" ,    
-            "דוחה",
-            "מסרבים",
-            "מסרבת",
-            "מסרב" ,     
-        ]
-        verdict_decision_suffix = [
-            "טענה",
-            "טענת",
-            "טענתו",
-            "טענת",
-            "טענתם",
-            "טענות",
-            "בקשת",
-            "בקשות",
-            "בקשה",
-            "עורעור",
-            "ערעורו",
-            "ערעורה",
-            "בקשתו",
-            "בקשת",
-        ]
-        verdict_finishers = [
-            "סוף דבר",
-        ]
+        for key in team_extra.keys():
+            extra.append(team_extra[key])     
         
-        length = len(text_lines)
-        l = length / 4
-        max_index = l * -1
-        index = -1
-        
+        keys = list(team_dict.keys())
+        extra_keys = list(team_extra.keys())
 
-        indexes = []
-        for_sure_indexes= []
-        while index > max_index:
-            l = text_lines[index]
-            for item in verdict_accept_decisions_words:
-                if item in l:
-                    indexes.append(index)
-                    for suffix in verdict_decision_suffix:                        
-                        if index + 1 != 0:
-                            continue
-                        if suffix in l:
-                            for_sure_indexes.append(index)
-                        if suffix in text_lines[index-1]:
-                            for_sure_indexes.append(index-1)   
-                        if suffix in text_lines[index+1]:
-                            for_sure_indexes.append(index)
+    
 
+        return keys,values,extra_keys,extra
 
-            for item in verdict_deny_decisions_words:
-                if item in l:
-                    for suffix in verdict_decision_suffix:                        
-                        if index + 1 != 0:
-                            continue
-                        if suffix in l:
-                            for_sure_indexes.append(index)
-                        if suffix in text_lines[index-1]:
-                            for_sure_indexes.append(index-1)   
-                        if suffix in text_lines[index+1]:
-                            for_sure_indexes.append(index)
-                
+    async def process_verdict_text(self,text:str): # done
+        return text
 
-            for item in verdict_decision_suffix:
-                if item in l:
-                    indexes.append(index)             
-
-            for item in verdict_finishers:
-                if item in l:
-                    indexes.append(index)    
-                    for suffix in verdict_decision_suffix:                        
-                        if index + 1 != 0:
-                            continue
-                        if suffix in l:
-                            for_sure_indexes.append(index)
-                        if suffix in text_lines[index-1]:
-                            for_sure_indexes.append(index-1)   
-                        if suffix in text_lines[index+1]:
-                            for_sure_indexes.append(index)
-
-                                             
-            
-            index -= 1
-        # print(indexes)
-        decision_area = "\n".join(text_lines[-100:])
-        print(len(decision_area))
-        return text_lines,decision_area
-        if len(indexes) != 0:
-            min_index = min(indexes)
-            min_index -= 10
-            decision_area = "\n".join(text_lines[min_index:])
-            print(len(decision_area))
-            text_area = "\n".join(text_lines[min_index * - 1:])
-            return text_area,decision_area
-        else:
-            decision_area = ""
-            text_area = "\n".join(text_lines)
-            return text_area,decision_area
         
 
     async def process_verdict_end(self,end:str): # None
@@ -425,103 +272,18 @@ class VerdictProcessor:
         return end
 
     async def process_verdict_decision(self,decision:str):
-
-        verdict_deny_decisions_words = [
-            "לדחות",
-            "נדחה",
-            "נדחת",
-            "לסרב" ,    
-            "דוחה",
-            "מסרבים",
-            "מסרבת",
-            "מסרב" ,     
-        ]
-        verdict_decision_suffix = [
-            "טענה",
-            "טענת",
-            "טענתו",
-            "טענת",
-            "טענתם",
-            "טענות",
-            "בקשת",
-            "בקשות",
-            "בקשה",
-            "עורעור",
-            "ערעורו",
-            "ערעורה",
-            "בקשתו",
-            "בקשת",
-        ]
-        verdict_finishers = [
-            "סוף דבר",
-        ]
-        
-        
-        if len(decision) > 512:
-            num_times = int(float(len(decision)) / 512.0)
-            # num_times = int(num_times/ 2) 
-            total_netural_score = 0.0
-            total_positive_score = 0.0
-            total_negative_score = 0.0
-            start = 0
-            end = 512
-            for i in range(num_times):
-                se = sentiment_analysis(decision[start:end])
-                start = end
-                end += 512
-                netural_dict = se[0][0]
-                positive_dict = se[0][1]
-                negative_dict = se[0][2]
-
-                netural_score = netural_dict['score']
-                positive_score = positive_dict['score']
-                negative_score = negative_dict['score']
-
-                total_netural_score += netural_score
-                total_positive_score += positive_score
-                total_negative_score += negative_score
-            total_netural_score = total_netural_score / num_times
-            total_positive_score = total_positive_score / num_times
-            total_negative_score = total_negative_score / num_times
-
-        else:
-            se = sentiment_analysis(decision)
-            netural_dict = se[0][0]
-            positive_dict = se[0][1]
-            negative_dict = se[0][2]
-
-            total_netural_score = netural_dict['score']
-            total_positive_score = positive_dict['score']
-            total_negative_score = negative_dict['score']            
-
-        des = "None"
-        # total_negative_score = total_negative_score / 4
-        # total_positive_score = total_positive_score * 20
-        # total_netural_score = total_netural_score
-        print("negative:",total_negative_score,",netural:",total_netural_score,"positive:",total_positive_score)
-        if total_negative_score > total_positive_score and total_negative_score > total_netural_score:
-            des = "negative"
-        if total_positive_score > total_negative_score and total_positive_score > total_netural_score:
-            des = "positive"
-        if total_netural_score > total_positive_score and total_netural_score > total_negative_score:
-            des = "netural"           
-                 
-        print(des)
-        return des
+        return decision
     
     async def process_list_to_str(self,lst:list) -> str:
-        l = "[" + ";".join(lst) + "]"
+        l = "[" + ",".join(lst) + "]"
         return l
 
     async def process_dict_to_str(self,dict:dict) -> str:
-        # print(str(dict))
-        # str_dict = json.dumps(dict)
-        # str_dict = str_dict.strip()
         dict_string = ""
         for key in dict.keys():
             dict[key] =  await self.process_col_item(dict[key])
         for key in dict.keys():
-            dict_string += key + ":" + dict[key] +";"
+            dict_string += key + ":" + dict[key]
         dict_string = dict_string[ :len(dict_string) - 1]
         return dict_string
         
@@ -530,7 +292,7 @@ class VerdictProcessor:
         return eval(str_dict)
 
     async def process_str_to_list(self,str_list:str) -> list:
-        lst = str_list.split(";")
+        lst = str_list.split(",")
         return lst
     
 
@@ -570,68 +332,61 @@ class VerdictProcessor:
         if verdict_areas is False:
             return False
         
-        (verdict_title_area,
+        (verdict_title_area, 
         verdict_alefs_area,
         verdict_judges_area,
         verdict_team_1_area,
         verdict_team_2_area,
         verdict_date_area,
         verdict_lawyer_area,
-        verdict_text_area,
-        verdict_end_area,
-        verdict_data_area,
-        ) = verdict_areas
+        text) = verdict_areas
         
-        
-            
-
         
         title = await self.process_verdict_title(verdict_title_area)
         alefs = await self.process_verdict_alefs(verdict_alefs_area)
         judges_first_names,judges_last_names,judges_genders = await self.process_verdict_judges(verdict_judges_area)
         
-
-
-        team_one,team_one_extra = await self.process_verdict_team_one(verdict_team_1_area)
-        team_two,team_two_extra = await self.process_verdict_team_two(verdict_team_2_area)
+        team_one_names, team_one,team_one_extra_names,team_one_extra = await self.process_verdict_team(verdict_team_1_area)
+        team_two_names,team_two,team_two_extra_names,team_two_extra = await self.process_verdict_team(verdict_team_2_area)
         
         date = await self.process_verdict_date(verdict_date_area)
-        lawyers = await self.process_verdict_lawyers(verdict_lawyer_area)
-        text_data,decision = await self.process_verdict_text(verdict_text_area,alefs)
-        decision = await self.process_verdict_decision(decision)
-        end = await self.process_verdict_end(verdict_end_area)
+        lawyers_teams,lawyers,lawyers_extra_teams,lawyers_extra = await self.process_verdict_lawyers(verdict_lawyer_area)
+        
+        for i,lst in enumerate(team_one):
+            for j,item in enumerate(lst):
+                team_one[i][j] =  remove_extra_spaces(remove_digits_and_periods(item))
 
-        
-        title = await self.process_col_item(title)
-        alefs =  await self.process_col_item(alefs)
-        judges_first_names =  await self.process_col_item(judges_first_names)
-        judges_last_names =  await self.process_col_item(judges_last_names)
-        judges_genders = await self.process_col_item(judges_genders)
-        
-        team_one =  await self.process_col_item(team_one)
-        team_two =  await self.process_col_item(team_two)
-        date =  await self.process_col_item(date)
-        lawyers =  await self.process_col_item(lawyers)
-        text_data =  await self.process_col_item(text_data)
-        end =  await self.process_col_item(end)
-        
+        for i,lst in enumerate(team_two):
+            for j,item in enumerate(lst):
+                team_two[i][j] =  remove_extra_spaces(remove_digits_and_periods(item))
 
+        for i,lst in enumerate(lawyers):
+            for j,item in enumerate(lst):
+                l = lawyers[i][j].split(";")
+                l = remove_empty_strings(l)
+                if len(l) > 1:
+                    lawyers[i] = l
+        
         columns = {
             self.COLUMN_TITLE :title,
             self.COLUMS_ALEFS:alefs,
             self.COLUMNS_JUDGES_FIRST_NAMES:judges_first_names,
             self.COLUMNS_JUDGES_LAST_NAMES:judges_last_names,
             self.COLUMNS_JUDGES_GENDERS:judges_genders,
+            self.COLUMN_TEAM_ONE_NAMES:team_one_names,
             self.COLUMN_TEAM_ONE:team_one,
+            self.COLUMN_TEAM_ONE_EXTRA_NAMES:team_one_extra_names,
+            self.COLUMN_TEAM_ONE_EXTRA:team_one_extra,
+            
+            self.COLUMN_TEAM_TWO_NAMES:team_two_names,
             self.COLUMN_TEAM_TWO:team_two,
+            self.COLUMN_TEAM_ONE_EXTRA_NAMES:team_two_extra_names,
+            self.COLUMN_TEAM_TWO_EXTRA:team_two_extra,
+            
             self.COLUMN_DATE:date,
+            self.COLUMNS_LAWYERS_TEAMS:lawyers_teams,
             self.COLUMNS_LAWYERS:lawyers,
-            self.COLUMNS_TEXT:text_data,
-            self.COLUMNS_END:end,
-            self.COLUMN_DECISION:decision,
-            self.COLUMN_DATA:text_data
-            # self.COLUMNS_BAG_OF_WORDS:bag_of_words,
-            # self.COLUMNS_TEXT_BAG_OF_WORDS:text_bag_of_words,
+            self.COLUMNS_TEXT:text,
         }
         return columns
         

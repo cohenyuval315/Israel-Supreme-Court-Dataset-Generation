@@ -3,9 +3,18 @@ import PyPDF2
 import os
 import pandas as pd
 
-async def remove_extra_spaces(string):
+def remove_extra_spaces(string):
     modified_string = re.sub(r'\s+', ' ', string)
     return modified_string
+
+def remove_digits_and_periods(text):
+    pattern = r"[0-9.]"
+    cleaned_text = re.sub(pattern, "", text)
+    return cleaned_text.strip()
+
+
+def remove_empty_strings(lst:list):
+    return [i.strip() for i in lst if len(i) > 0]
 
 async def find_text_first_index_in_list(lst,text,reverse=False):
     index = -1

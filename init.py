@@ -4,78 +4,28 @@ from verdict_processor import VerdictProcessor
 from verdict_query_builder import VerdictQueryBuilder
 from utils import get_data_dir
 from config import Config
-import asyncio
+import os
 from pprint import pprint
-from verdict_hebrew_nlp import VerdictHebrewNLP
-import json
-import hebrew_tokenizer as ht
 
-async def scrap_download(verdict_query_handler:VerdictQueryHandler,verdict_query_scrapper:VerdictQueryScrapper,query_search_input:str,max_files:int):
+async def scrap_download(verdict_query_handler:VerdictQueryHandler,verdict_query_scrapper:VerdictQueryScrapper,query_search_input:str,max_files:int,retry=False):
+    if retry is False:
+        if os.path.exists(f"./data/{query_search_input}"):
+            return
     file_links = await verdict_query_scrapper.scrap_for_file_links(query_search_input)
     await verdict_query_handler.download_files(links=file_links,
                                             max_files=max_files,
                                             query_search_input=query_search_input)
     
-async def queries_build(verdict_query_handler:VerdictQueryHandler,verdict_processor:VerdictProcessor):
+async def queries_build(verdict_query_handler:VerdictQueryHandler,verdict_processor:VerdictProcessor,override:bool=False):
     queries_dict = await verdict_query_handler.get_queries_dict()
     queries = await verdict_query_handler.get_all_queries()
     verdict_builder = VerdictQueryBuilder(queries,queries_dict,verdict_processor=verdict_processor)
-    queries_indexes=[0] # only on 0
-    query_files_indexes=[0,1]
+    queries_indexes=None # [0] # only on 0
+    query_files_indexes=None #[0,1]
     print_query=True
-    processed_files = await verdict_builder.build(print_query=print_query,queries_indexes=queries_indexes,query_files_indexes=query_files_indexes)
-    # await verdict_builder.print_all()
-    await nlp(verdict_builder)
-
-async def compute_idf_verdicts(vhnlp:VerdictHebrewNLP,processed_queries_files:dict):
-    for query,files in processed_queries_files.items():
-         for i,item in enumerate(files):
-            data = item['data']
-            bag_dict = await vhnlp.get_bag_of_words(data)
-            await vhnlp.process_bag(file_name=files[i],bag_dict=bag_dict)
-
-    return vhnlp.idf_dict
-        
-async def compute_tf_idf_verdicts(vhnlp:VerdictHebrewNLP,processed_queries_files:dict):
-    for query,files in processed_queries_files.items():
-         for i,item in enumerate(files):
-            data = item['data']
-            bag_dict = await vhnlp.get_bag_of_words(data)
-            tf_bag_dict = await vhnlp.compute_tf(bag_dict=bag_dict)
-            tf_idf_dict = await vhnlp.compute_tf_idf(tf_bag_dict=tf_bag_dict)
-            tags,scores = await vhnlp.get_tags(tf_idf_dict)
-            print(tags[-5:])
-            print(scores[-5:])
-            
-            processed_queries_files[query][i]["tags"] = ";".join(tags)
-    return processed_queries_files
-        
-async def nlp(verdict_builder:VerdictQueryBuilder):
-    vhnlp = VerdictHebrewNLP()
-    if not verdict_builder.processed_queries_files:
-        return  None
+    processed_files = await verdict_builder.build(override=override,print_query=print_query,queries_indexes=queries_indexes,query_files_indexes=query_files_indexes)
+    await verdict_builder.build_dataframe(override)
     
-    await compute_idf_verdicts(vhnlp=vhnlp,processed_queries_files=verdict_builder.processed_queries_files)
-    taged_processed_queries_files = await compute_tf_idf_verdicts(vhnlp=vhnlp,processed_queries_files=verdict_builder.processed_queries_files)
-
-        
-    with open('processed_queries_files_example.json', 'w', encoding='utf-8') as f: 
-        json.dump(taged_processed_queries_files, f, ensure_ascii=False, indent=4) 
-
-    with open('idf_example.json', 'w', encoding='utf-8') as f: 
-        json.dump(vhnlp.idf_dict, f, ensure_ascii=False, indent=4) 
-        
-
-    
-
-
-
-    
-
-
-
-
-
 
 
 
@@ -88,7 +38,8 @@ async def init(config:Config):
 
 
 async def run(config:Config):
-
+    queries = config.QUERIES 
+    override_exisitng_csv = config.OVERRIDE_EXISTING
     download=config.DOWNLOAD
     max_files = config.MAX_FILES_TO_DOWNLOAD_FROM_QUERY
     data_dir_name = config.ALL_DATA_DIR_NAME
@@ -96,8 +47,8 @@ async def run(config:Config):
     query_processed_data_dir = config.EACH_QUERY_CSV_FILE_DIR_NAME
     chromedriver_path = config.CHROMEDRIVER_PATH
     query_test_input= config.QUERY_TEST_INPUT
+    redownload_existing_queries = config.REDOWNLOAD_EXISITING
     data_dir = get_data_dir(data_dir_name=data_dir_name)
-
 
     # init 
     verdict_query_handler = VerdictQueryHandler(data_dir=data_dir,query_data_dir=query_data_dir,query_processed_data_dir=query_processed_data_dir,query_test_input=query_test_input)
@@ -105,18 +56,33 @@ async def run(config:Config):
     verdict_processor = VerdictProcessor(data_dir=data_dir,query_data_dir=query_data_dir,query_processed_data_dir=query_processed_data_dir)
     
 
-    # query
-    query_search_input = await verdict_query_handler.get_input_query(test=config.TEST)
-
-    if not query_search_input:
-        print("no query")
-        return
+    if len(queries) == 0:
+        query = await verdict_query_handler.get_input_query(test=config.TEST)
+        queries = []
+        queries.append(query)
     
+
     if download:
-        await scrap_download(verdict_query_handler,verdict_query_scrapper,query_search_input,max_files)
+        for query_search_input in queries:
+            await scrap_download(verdict_query_handler,verdict_query_scrapper,query_search_input,max_files,retry=redownload_existing_queries)
     
     
-    await queries_build(verdict_query_handler,verdict_processor)
+    await queries_build(verdict_query_handler,verdict_processor,override=override_exisitng_csv)
 
+    import pandas as pd
+    p = pd.read_csv("./data/דירות/csv/דירות.csv")
+    v = p.iloc[4]
+    print(v['filename'])
+    print(v['title'])
+    pprint(v['team_one_names'])
+    pprint(v['team_one'])
+    pprint(v['team_two_names'])
+    pprint(v['team_two'])
+
+
+    # pprint(v['lawyers_teams_names'])
+    # pprint(v['lawyers'])
+    
+    
     
 
