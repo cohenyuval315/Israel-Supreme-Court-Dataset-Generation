@@ -14,7 +14,7 @@ from utils import remove_extra_spaces,find_text_first_index_in_list,remove_digit
 class VerdictProcessor:
     COLUMN_FAIL = "None"
     COLUMN_TITLE = "title"
-    COLUMS_ALEFS = "alefs"
+    COLUMS_ALEFS = "procedures"
     COLUMN_TEAM_ONE_NAMES = "team_one_names"
     COLUMN_TEAM_TWO_NAMES = "team_two_names"
     COLUMNS_JUDGES_FIRST_NAMES = "judge_first_names"
@@ -23,8 +23,15 @@ class VerdictProcessor:
     COLUMN_TEAM_ONE = "team_one"
     COLUMN_TEAM_TWO = "team_two"
     COLUMN_DATE = "date"
-    COLUMNS_LAWYERS_TEAMS = "lawyers_teams_names"
-    COLUMNS_LAWYERS = "lawyers"
+    COLUMNS_LAWYERS_TEAMS = "all_lawyers_teams_names"
+    COLUMNS_LAWYERS = "all_lawyers"
+    COLUMN_TEAM_ONE_LAWYERS_TEAMS = "team_one_lawyers_teams_names"
+    COLUMN_TEAM_ONE_LAWYERS = "team_one_lawyers"
+    COLUMN_TEAM_TWO_LAWYERS_TEAMS = "team_two_lawyers_teams_names"
+    COLUMN_TEAM_TWO_LAWYERS = "team_two_lawyers"
+
+
+
     COLUMNS_TEXT = "text"
     COLUMNS_END = "end"
     COLUMN_DECISION = "decision"
@@ -47,6 +54,7 @@ class VerdictProcessor:
         verdict_data_divider = "דין-פסק"
         team_versus_divider =  "ד  ג  נ"
         date_verdict_sitting = "הישיבה תאריך"
+        date_verdict_sitting2 = "הישיבות תאריכי"
         before_judges_divider = "לפני"
         lawyers_prefix = "בשם"
 
@@ -54,23 +62,33 @@ class VerdictProcessor:
         if not verdict_data_divider_index:
             return False
         
-        verdict_data = "\n".join(text.split("\n")[:verdict_data_divider_index])
-        date_splitter = verdict_data.split(date_verdict_sitting)
-        if len(date_splitter) == 1:
-            lawyers_start_index = await find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
-            verdict_lawyer_area = "\n".join(date_splitter[0].split("\n")[lawyers_start_index:])
-            verdict_teams_data = "\n".join(date_splitter[0].split("\n")[:lawyers_start_index])   
-            verdict_date_area = "None"         
-        else:
-            verdict_teams_data = date_splitter[0]
-            verdict_lawyer_area = date_splitter[1]
-            date_index = len(verdict_teams_data.split("\n"))-1
-            verdict_date_area = verdict_teams_data.split("\n")[date_index]
-            verdict_teams_data = "\n".join(verdict_teams_data.split("\n")[:date_index])
+        # data of the verdict
+        verdict_data = "\n".join(text.split("\n")[:verdict_data_divider_index]) 
 
-        team_splitter = verdict_teams_data.split(team_versus_divider)
+        # date_splitter = verdict_data.split(date_verdict_sitting)
+        # if len(date_splitter) == 1:
+        #     lawyers_start_index = await find_text_first_index_in_list(date_splitter[0].split("\n"),lawyers_prefix)
+        #     verdict_lawyer_area = "\n".join(date_splitter[0].split("\n")[lawyers_start_index:])
+        #     verdict_teams_data = "\n".join(date_splitter[0].split("\n")[:lawyers_start_index])   
+        #     verdict_date_area = "None"         
+        # else:
+        #     verdict_teams_data = date_splitter[0]
+        #     verdict_lawyer_area = date_splitter[1]
+        #     date_index = len(verdict_teams_data.split("\n"))-1
+        #     verdict_date_area = verdict_teams_data.split("\n")[date_index]
+        #     verdict_teams_data = "\n".join(verdict_teams_data.split("\n")[:date_index])
+
+
+
+        #team_splitter = verdict_teams_data.split(team_versus_divider)
+        team_splitter = verdict_data.split(team_versus_divider)
+
+
+        verdict_team_2_lawyers_date_area = team_splitter[1]
+
+
+        # Team One and Judges Areas Mapping 
         verdict_data_with_team1 = team_splitter[0]
-        verdict_team_2_area = team_splitter[1]
         title_index = 0
         verdict_title_area = verdict_data_with_team1.split("\n")[title_index]
         verdict_data_with_team1 = "\n".join(verdict_data_with_team1.split("\n")[title_index + 1:])
@@ -80,11 +98,45 @@ class VerdictProcessor:
         judges_and_team1 = "\n".join(verdict_data_with_team1.split("\n")[before_judges_divider:])
         verdict_alefs_area = "\n".join(verdict_data_with_team1.split("\n")[:before_judges_divider])
         judges_and_team1_splitter = judges_and_team1.split("\n")
-        judges_and_team1_splitter[0] = judges_and_team1_splitter[0].split(":")[:len(judges_and_team1_splitter[0].split(":"))-1][0]
-        judges_and_team1s = "\n".join(judges_and_team1_splitter)
-        teams_index = await find_text_first_index_in_list(judges_and_team1s.split("\n"),":")
-        verdict_judges_area = "\n".join(judges_and_team1s.split("\n")[:teams_index])
-        verdict_team_1_area = "\n".join(judges_and_team1s.split("\n")[teams_index:])
+        judges_end_index = -1
+        for i,line in enumerate(judges_and_team1_splitter):
+            if "כבוד" in line and i > 0:
+                pass
+            else:
+                if i > 0:
+                    judges_end_index = i
+                    break
+        if judges_end_index == -1:
+            return False
+        judges_area = judges_and_team1_splitter[:judges_end_index]
+        team1_area = judges_and_team1_splitter[judges_end_index:]
+        
+        verdict_judges_area = "\n".join(judges_area)
+        verdict_team_1_area = "\n".join(team1_area)        
+
+        lawyers_start_index = await find_text_first_index_in_list(verdict_team_2_lawyers_date_area.split("\n"),lawyers_prefix)
+
+        verdict_lawyers_area = "\n".join(verdict_team_2_lawyers_date_area.split("\n")[lawyers_start_index:])
+        verdict_teams_2_date_area = "\n".join(verdict_team_2_lawyers_date_area.split("\n")[:lawyers_start_index])
+
+
+
+        date_index = -1
+        for i,line in enumerate(verdict_teams_2_date_area.split("\n")):
+            if date_verdict_sitting in line:
+                date_index = i
+            if date_verdict_sitting2 in line:
+                date_index = i
+            
+        
+        if date_index == -1:
+            verdict_date_area = None
+            verdict_team_2_area = verdict_teams_2_date_area
+        else:
+            temp = verdict_teams_2_date_area.split("\n")
+            verdict_date_area = temp[date_index]
+            del temp[date_index]
+            verdict_team_2_area = "\n".join(temp[:date_index - 1])
 
 
         verdict_areas = (verdict_title_area, 
@@ -93,12 +145,9 @@ class VerdictProcessor:
                          verdict_team_1_area,
                          verdict_team_2_area,
                          verdict_date_area,
-                         verdict_lawyer_area,
+                         verdict_lawyers_area,
                          text
                          )
-        for i in range(len(verdict_areas)):
-            if len(verdict_areas[i]) == 0:
-                return False
         return verdict_areas
     
 
@@ -213,20 +262,32 @@ class VerdictProcessor:
         extra_keys = list(team_extra.keys())
         return keys,values,extra_keys,extra
 
-    async def process_verdict_date(self,date:str): #done
+    async def process_verdict_date(self,date_area,text:str): #done
         start_date = "("
         end_date = ")"
         start_index = -1
         end_index = -1
-        for i,s in enumerate(date):
-            if s is start_date:
-                start_index = i           
-            if s is end_date:
-                end_index = i
-        if start_index == -1 or end_index == -1:
-            return None
-        d = date[start_index+1:end_index].strip()
-        return d
+        if date_area is not None:     
+            for i,s in enumerate(date_area):
+                if s is start_date:
+                    start_index = i           
+                if s is end_date:
+                    end_index = i
+            if start_index == -1 or end_index == -1:
+                pass
+            else:
+                d = date_area[start_index+1:end_index].strip()
+                return d
+        else:
+            text_lines = [line for line in text.split("\n")]
+            for line in reversed(text_lines):
+                date_pattern = r'(?:\d{1,2}\.){2}\d{4}' 
+                dates = re.findall(date_pattern, line)
+                if dates:
+                    return dates[-1]  
+        return None
+        
+                
 
 
     async def lawyers_spliting(self,teams_lines:list):
@@ -274,9 +335,6 @@ class VerdictProcessor:
     async def process_verdict_decision(self,decision:str):
         return decision
     
-    async def process_list_to_str(self,lst:list) -> str:
-        l = "[" + ",".join(lst) + "]"
-        return l
 
     async def process_dict_to_str(self,dict:dict) -> str:
         dict_string = ""
@@ -294,6 +352,10 @@ class VerdictProcessor:
     async def process_str_to_list(self,str_list:str) -> list:
         lst = str_list.split(",")
         return lst
+    
+    async def process_list_to_str(self,lst:list,char="|"):
+        encoded_string = char.join(lst)
+        return encoded_string
     
 
     async def process_col_item(self,col_item):
@@ -324,8 +386,119 @@ class VerdictProcessor:
         return self.COLUMN_FAIL
         
 
+    async def process_nested_list_to_str(self,lst:list):
+        new_list = []
+        for l in lst:
+            l_string = await self.process_list_to_str(l)
+            new_list.append(l_string)
+        return await self.process_list_to_str(new_list,char="@")
         
+    async def process_dict_like_text(self,text:str):
+        titles = []
+        data = []
+        for i,line in enumerate(text.split("\n")):    
+            if ":" in line:
+                titles.append(line.split(":")[-1].strip())
+                data.append(line.split(":")[0].strip() +"@")
+            else:
+                data.append(line)
 
+        
+        data = [d.strip() for d in data if len(d.strip()) > 0]
+
+        list_pattern = r"\.\s{1,2}\d{1,2}"
+        titles_dict = {title:[] for title in titles}
+
+        
+        result = []
+        current_list = []
+
+        extra = []
+        last_index = 0
+        for i, line in enumerate(reversed(data)):
+            if re.search(list_pattern,line) or "@" in line:
+                break
+            else:
+                extra.append(line)
+                last_index += 1
+
+        for i, line in enumerate(data):
+            if "@" in line:
+                data[i] = line.replace("@","")
+
+        
+        
+        # print("before:")
+        # print(data)
+        data = data[:len(data) - last_index]
+
+        # print("after:")
+        # print(data)
+        # print("extra:")
+        # print(extra)
+
+        numbers_lists = []
+        plain_text_list = []
+
+        for i in range(len(data)):
+            line = data[i]
+            # print(line)
+            search = re.search(list_pattern,line)
+            if search:
+                numbers_lists.append((i,line))
+            else:
+                try:
+                    search1 = re.findall(list_pattern,data[i - 1])
+                    search2 = re.findall(list_pattern,data[i + 1])
+                    n1 = [int(match.strip(". ")) for match in search1]
+                    n2 = [int(match.strip(". ")) for match in search2]
+                    if n1[0] + 1 == n2[0]:
+                        numbers_lists[len(numbers_lists) - 1] = (numbers_lists[len(numbers_lists) - 1][0] ,line + " " +numbers_lists[len(numbers_lists) - 1][1])
+                        continue
+                except:
+                    pass
+                plain_text_list.append((i,line))
+
+        number_lists_result = []
+        current_list = []
+        
+        for item in numbers_lists:
+            if item[1].endswith('. 1'):
+                if current_list:
+                    number_lists_result.append(current_list)
+                current_list = [item]
+            else:
+                current_list.append(item)
+
+        if current_list:
+            number_lists_result.append(current_list)
+
+
+        plain_text_result = []
+        current_list = []
+
+        for item in plain_text_list:
+            n_value, plain_text = item
+            if not current_list or n_value != current_list[-1][0] + 1:
+                if current_list:
+                    plain_text_result.append(current_list)
+                current_list = []
+            current_list.append(item)
+
+    
+        if current_list:
+            plain_text_result.append(current_list)
+
+
+        results = number_lists_result + plain_text_result
+        results = sorted(results,key = lambda lst: lst[0][0]) 
+        total_list = []
+        for lst in results:
+            total_list.append([item[1] for item in lst])
+
+        if len(total_list) != len(titles):
+            return False
+        return titles,total_list,extra
 
     async def preprocess_file(self,file_name:str,text:str,id:int):
         verdict_areas = await self.area_spliting(text=text,id=id)
@@ -341,24 +514,33 @@ class VerdictProcessor:
         verdict_lawyer_area,
         text) = verdict_areas
         
+        # print(verdict_judges_area,"\n")
+        # print(verdict_team_1_area,"\n")
+        # print(verdict_team_2_area,"\n")
+        # print(verdict_lawyer_area,"\n")
         
         title = await self.process_verdict_title(verdict_title_area)
         alefs = await self.process_verdict_alefs(verdict_alefs_area)
+        date = await self.process_verdict_date(verdict_date_area,text)
+
+
         judges_first_names,judges_last_names,judges_genders = await self.process_verdict_judges(verdict_judges_area)
+
+        t1= await self.process_dict_like_text(verdict_team_1_area)
+        t2 = await self.process_dict_like_text(verdict_team_2_area)
+        if t1 is False or t2 is False:
+            return False
+        team_one_names,team_one,team_one_extra = t1
         
-        team_one_names, team_one,team_one_extra_names,team_one_extra = await self.process_verdict_team(verdict_team_1_area)
-        team_two_names,team_two,team_two_extra_names,team_two_extra = await self.process_verdict_team(verdict_team_2_area)
-        
-        date = await self.process_verdict_date(verdict_date_area)
+        team_two_names,team_two,team_two_extra = t2
+
+
+
+
+        # team_one_names, team_one,team_one_extra_names,team_one_extra = await self.process_verdict_team(verdict_team_1_area)
+        # team_two_names,team_two,team_two_extra_names,team_two_extra = await self.process_verdict_team(verdict_team_2_area)
         lawyers_teams,lawyers,lawyers_extra_teams,lawyers_extra = await self.process_verdict_lawyers(verdict_lawyer_area)
         
-        for i,lst in enumerate(team_one):
-            for j,item in enumerate(lst):
-                team_one[i][j] =  remove_extra_spaces(remove_digits_and_periods(item))
-
-        for i,lst in enumerate(team_two):
-            for j,item in enumerate(lst):
-                team_two[i][j] =  remove_extra_spaces(remove_digits_and_periods(item))
 
         for i,lst in enumerate(lawyers):
             for j,item in enumerate(lst):
@@ -366,23 +548,88 @@ class VerdictProcessor:
                 l = remove_empty_strings(l)
                 if len(l) > 1:
                     lawyers[i] = l
+
         
+        # print(team_one)
+        # print(team_one_extra_names)
+        # print(team_one_extra)
+        
+        # print(team_two)
+        # print(team_two_extra)
+        # print(team_two_extra_names)
+
+        team_one_lawyers_team_name = []
+        team_two_lawyers_team_name = []
+        team_one_lawyers = []
+        team_two_lawyers = []
+        
+        for i,team in enumerate(lawyers_teams):
+            team_lawyers = lawyers[i]
+            for t1 in team_one_names:
+                if t1[1:5] in team:
+                    team_one_lawyers_team_name.append(team)
+                    team_one_lawyers.append(team_lawyers)
+                    continue
+            for t2 in team_two_names:
+                if t2[1:5] in team:
+                    team_two_lawyers_team_name.append(team)
+                    team_two_lawyers.append(team_lawyers)
+                    continue            
+        # print("LAWYERS_TEAMS:",lawyers_teams)
+        # print("LAWYERS:",lawyers)
+        # print("1 NAMES:",team_one_lawyers_team_name)
+        # print("2 NAMES:",team_two_lawyers_team_name)
+        # print("1_TEAMS:",team_one_lawyers)
+        # print("2_TEAMS:",team_two_lawyers)        
+
+        
+
+        team_one_lawyers_team_name = await self.process_list_to_str(team_one_lawyers_team_name)
+        team_two_lawyers_team_name = await self.process_list_to_str(team_two_lawyers_team_name)
+        team_one_lawyers = await self.process_nested_list_to_str(team_one_lawyers)
+        team_two_lawyers = await self.process_nested_list_to_str(team_two_lawyers)
+
+
+        
+        team_one_names = await self.process_list_to_str(team_one_names)
+        team_two_names = await self.process_list_to_str(team_two_names)
+        lawyers_teams = await self.process_list_to_str(lawyers_teams)
+        lawyers =  await self.process_nested_list_to_str(lawyers)
+        team_one = await self.process_nested_list_to_str(team_one)
+        team_two = await self.process_nested_list_to_str(team_two)
+        team_one_extra = "\n".join(team_one_extra)
+        team_two_extra = "\n".join(team_two_extra)
+        alefs = await self.process_list_to_str(alefs)
+        judges_first_names = await self.process_list_to_str(judges_first_names)
+        judges_last_names = await self.process_list_to_str(judges_last_names)
+        judges_genders = await self.process_list_to_str(judges_genders)
+
+        # print(verdict_team_2_area)
+
+
+
+
+
         columns = {
             self.COLUMN_TITLE :title,
-            self.COLUMS_ALEFS:alefs,
+            self.COLUMS_ALEFS: alefs,
             self.COLUMNS_JUDGES_FIRST_NAMES:judges_first_names,
             self.COLUMNS_JUDGES_LAST_NAMES:judges_last_names,
             self.COLUMNS_JUDGES_GENDERS:judges_genders,
+
             self.COLUMN_TEAM_ONE_NAMES:team_one_names,
             self.COLUMN_TEAM_ONE:team_one,
-            self.COLUMN_TEAM_ONE_EXTRA_NAMES:team_one_extra_names,
             self.COLUMN_TEAM_ONE_EXTRA:team_one_extra,
             
             self.COLUMN_TEAM_TWO_NAMES:team_two_names,
             self.COLUMN_TEAM_TWO:team_two,
-            self.COLUMN_TEAM_ONE_EXTRA_NAMES:team_two_extra_names,
             self.COLUMN_TEAM_TWO_EXTRA:team_two_extra,
-            
+
+            self.COLUMN_TEAM_ONE_LAWYERS_TEAMS:team_one_lawyers_team_name,
+            self.COLUMN_TEAM_ONE_LAWYERS:team_one_lawyers,
+            self.COLUMN_TEAM_TWO_LAWYERS_TEAMS:team_two_lawyers_team_name,
+            self.COLUMN_TEAM_TWO_LAWYERS:team_two_lawyers,
+
             self.COLUMN_DATE:date,
             self.COLUMNS_LAWYERS_TEAMS:lawyers_teams,
             self.COLUMNS_LAWYERS:lawyers,

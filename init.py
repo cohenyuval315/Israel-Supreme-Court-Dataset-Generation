@@ -24,7 +24,11 @@ async def queries_build(verdict_query_handler:VerdictQueryHandler,verdict_proces
     query_files_indexes=None #[0,1]
     print_query=True
     processed_files = await verdict_builder.build(override=override,print_query=print_query,queries_indexes=queries_indexes,query_files_indexes=query_files_indexes)
-    await verdict_builder.build_dataframe(override)
+    try:
+        await verdict_builder.build_dataframe(override)
+    except Exception as e:
+        print(e)
+        
     
 
 
@@ -64,20 +68,24 @@ async def run(config:Config):
 
     if download:
         for query_search_input in queries:
-            await scrap_download(verdict_query_handler,verdict_query_scrapper,query_search_input,max_files,retry=redownload_existing_queries)
+            try:
+                await scrap_download(verdict_query_handler,verdict_query_scrapper,query_search_input,max_files,retry=redownload_existing_queries)
+            except Exception as e:
+                print(e)
+                
     
     
     await queries_build(verdict_query_handler,verdict_processor,override=override_exisitng_csv)
 
-    import pandas as pd
-    p = pd.read_csv("./data/דירות/csv/דירות.csv")
-    v = p.iloc[4]
-    print(v['filename'])
-    print(v['title'])
-    pprint(v['team_one_names'])
-    pprint(v['team_one'])
-    pprint(v['team_two_names'])
-    pprint(v['team_two'])
+    # import pandas as pd
+    # p = pd.read_csv("./data/דירות/csv/דירות.csv")
+    # v = p.iloc[4]
+    # print(v['filename'])
+    # print(v['title'])
+    # pprint(v['team_one_names'])
+    # pprint(v['team_one'])
+    # pprint(v['team_two_names'])
+    # pprint(v['team_two'])
 
 
     # pprint(v['lawyers_teams_names'])
