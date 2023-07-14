@@ -42,6 +42,10 @@ class VerdictProcessor:
     COLUMN_TEAM_TWO_EXTRA_NAMES = "team_two_extra_names"
     COLUMN_TEAM_TWO_EXTRA = "team_two_extra"
 
+    COLUMNS_ALL_LAWYERS = "teams_lawyers"
+    COLUMNS_ALL_LAWYERS_TEAMS = "teams_laywers_names"
+    COLUMNS_ALL_LAWYERS_TEAMS_EXTRA = "lawyers_extra"
+
 
     csv_columns = []
     def __init__(self,data_dir,query_data_dir,query_processed_data_dir) -> None:
@@ -301,27 +305,180 @@ class VerdictProcessor:
                 team_dict[key] = lawyers
         return team_dict,team_extra
 
+    async def process_lawyers(self,text:str):
+        prefix = "בשם"
+        colon =  ":"
+        lawyer_prefix = 'ד"עו'
+        words = text.split(" ")
+        words.append(" ")
+        lawyers_indexes = []
+        s = 0
 
+        ws = []
+        
+        for i, word in enumerate(words):
+            if prefix in word and "\n" in word:
+                w1 = word.split("\n")[0]
+                w2 = word.split("\n")[1]
+                ws.append(w1)
+                ws.append("\n")
+                ws.append(w2)  
+            else: 
+                if "\n" in word:
+                    w1 = word.split("\n")[0]
+                    w2 = word.split("\n")[1]
+                    ws.append(w1)
+                    ws.append("\n")
+                    ws.append(w2)  
+                else:
+                    ws.append(word)
+        ws = [w for w in ws if len(w) > 0]
+        words = ws
+        for i, word in enumerate(words):
+            if lawyer_prefix in word:
+                lawyers_indexes.append((i-2,i + 1))
+                s = i + 1 
+
+        start = 0
+        missing_indexes = []
+        for i in range(len(lawyers_indexes)-1):
+            start = lawyers_indexes[i][1]
+            finish = lawyers_indexes[i+1][0]
+            missing_indexes.append((start, finish))
+        if lawyers_indexes[0][0] != 0:
+            missing_indexes.append((0,lawyers_indexes[0][0]))
+        missing_indexes.append((lawyers_indexes[len(lawyers_indexes) - 1][1], len(words) - 1))
+        missing_indexes = [index for index in missing_indexes if index[0] != index[1]]
+        
+        indexes = lawyers_indexes + missing_indexes
+        indexes.sort(key=lambda key:key[0])
+
+        current_lst = []
+        result = {}
+        for index in indexes:
+            if index in missing_indexes:
+                s = index[0]
+                e = index[1]
+                title = " ".join(words[s:e])
+                title = remove_extra_spaces(title)
+                result[title] = current_lst
+                current_lst = []
+            else:
+                s = index[0]
+                e = index[1]
+                w = words[s:e]
+                lst = [l for l in w]
+                lst = [l.replace(":","") for l in words[s:e]]
+                lst = [l.replace(";","") for l in lst]
+                lst = [w.strip() for w in lst]
+                lst = [w for w in lst if len(w) > 0]
+                name = " ".join(lst)                
+                current_lst.append(name)
+        return result
+            
+
+
+    async def process_team(self,text:str):
+        # print(text)
+        colon =  ":"
+        words = text.split(" ")
+        words.append(" ")
+        lst_indexes = []
+        s = 0
+
+        ws = []
+        for i, word in enumerate(words):
+            if "." in word or "\n" in word or ":" in word:
+                if "." in word:
+                    w = word.split(".")                  
+                    w1 = w[0]
+                    w2 = w[1]
+                    if w1 == "":
+                        w1 = "."
+                    else: 
+                        if w2 == "":
+                            w2 = "."
+                    ws.append(w1)
+                    ws.append(w2)  
+                if "\n" in word:
+                    w1 = word.split("\n")[0]
+                    w2 = word.split("\n")[1]
+                    ws.append(w1)
+                    ws.append(w2)  
+                if ":" in word:
+                    w = word.split(":")                  
+                    w1 = w[0]
+                    w2 = w[1]
+                    if w1.strip() == "":
+                        w1 = ":"
+                    else: 
+                        if w2.strip() == "":
+                            w2 = ":"
+                    ws.append(w1)
+                    ws.append(w2)  
+            else:
+                ws.append(word)
+
+
+        ws = [w for w in ws if len(w) > 0]
+        words = ws
+
+        # print(words)
+        s = 0
+        for i, word in enumerate(words):
+            if ":" in word:
+                s = i + 1 
+            if " " == word:
+                lst_indexes.append((s,i + 1))
+        # print(lst_indexes)
+        for i in lst_indexes:
+            # print(" ".join(words[i[0]:i[1]]))
+            pass
+
+        start = 0
+        missing_indexes = []
+        for i in range(len(lst_indexes)-1):
+            start = lst_indexes[i][1]
+            finish = lst_indexes[i+1][0]
+            missing_indexes.append((start, finish))
+        if lst_indexes[0][0] != 0:
+            missing_indexes.append((0,lst_indexes[0][0]))
+        missing_indexes.append((lst_indexes[len(lst_indexes) - 1][1], len(words) - 1))
+        missing_indexes = [index for index in missing_indexes if index[0] != index[1]]
+        
+        indexes = lst_indexes + missing_indexes
+        indexes.sort(key=lambda key:key[0])
+
+        current_lst = []
+        result = {}
+        for index in indexes:
+            if index in missing_indexes:
+                s = index[0]
+                e = index[1]
+                title = " ".join(words[s:e])
+                result[title] = current_lst
+                current_lst = []
+            else:
+                s = index[0]
+                e = index[1]
+                lst = [l.replace(":","") for l in words[s:e]]
+                lst = [l.replace(";","") for l in lst]
+                lst = [w.strip() for w in lst]
+                lst = [w for w in lst if len(w) > 0]
+                name = " ".join(lst)                
+                current_lst.append(name)
+
+        return result
+          
 
     async def process_verdict_lawyers(self,lawyers:str): # done
-        team_dict,team_extra = await self.lawyers_spliting(lawyers.split("\n"))
+        result_dict = await self.process_lawyers(lawyers)
+        keys = list(result_dict.keys())
         values = []
-        extra = []
-
-        for key in team_dict.keys():
-            lst = team_dict[key]
-            # lst = [l for l in lst if len(l.split(" ")) < 4]
-            values.append(lst)
-
-        for key in team_extra.keys():
-            extra.append(team_extra[key])     
-        
-        keys = list(team_dict.keys())
-        extra_keys = list(team_extra.keys())
-
-    
-
-        return keys,values,extra_keys,extra
+        for key in result_dict.keys():
+            lst = result_dict[key]
+            values.append(lst)    
+        return keys,values
 
     async def process_verdict_text(self,text:str): # done
         return text
@@ -393,24 +550,31 @@ class VerdictProcessor:
             new_list.append(l_string)
         return await self.process_list_to_str(new_list,char="@")
         
+
+
     async def process_dict_like_text(self,text:str):
         titles = []
         data = []
+        not_found_title_start = True
+        t = []
         for i,line in enumerate(text.split("\n")):    
             if ":" in line:
+                not_found_title_start = False
                 titles.append(line.split(":")[-1].strip())
                 data.append(line.split(":")[0].strip() +"@")
             else:
-                data.append(line)
+                if not_found_title_start:
+                    t.append(line)
+                else:
+                    data.append(line)
 
         
         data = [d.strip() for d in data if len(d.strip()) > 0]
 
         list_pattern = r"\.\s{1,2}\d{1,2}"
-        titles_dict = {title:[] for title in titles}
-
         
-        result = []
+
+    
         current_list = []
 
         extra = []
@@ -424,7 +588,7 @@ class VerdictProcessor:
 
         for i, line in enumerate(data):
             if "@" in line:
-                data[i] = line.replace("@","")
+                data[i] = line.split("@")[0].strip()
 
         
         
@@ -498,6 +662,7 @@ class VerdictProcessor:
 
         if len(total_list) != len(titles):
             return False
+        
         return titles,total_list,extra
 
     async def preprocess_file(self,file_name:str,text:str,id:int):
@@ -513,6 +678,7 @@ class VerdictProcessor:
         verdict_date_area,
         verdict_lawyer_area,
         text) = verdict_areas
+
         
         # print(verdict_judges_area,"\n")
         # print(verdict_team_1_area,"\n")
@@ -534,22 +700,22 @@ class VerdictProcessor:
         
         team_two_names,team_two,team_two_extra = t2
 
-
-
+        # t_law = await self.process_dict_like_text(verdict_lawyer_area)
+        # if t_law is False:
+        #     return False
+        
+        # team_lawyers_teams_names,teams_lawyers,lawyers_extra = t_law
+        
+        
 
         # team_one_names, team_one,team_one_extra_names,team_one_extra = await self.process_verdict_team(verdict_team_1_area)
         # team_two_names,team_two,team_two_extra_names,team_two_extra = await self.process_verdict_team(verdict_team_2_area)
-        lawyers_teams,lawyers,lawyers_extra_teams,lawyers_extra = await self.process_verdict_lawyers(verdict_lawyer_area)
+        lawyers_teams,lawyers = await self.process_verdict_lawyers(verdict_lawyer_area)
         
+        # res = await self.process_team(verdict_team_1_area)
+        # print(res)
 
-        for i,lst in enumerate(lawyers):
-            for j,item in enumerate(lst):
-                l = lawyers[i][j].split(";")
-                l = remove_empty_strings(l)
-                if len(l) > 1:
-                    lawyers[i] = l
 
-        
         # print(team_one)
         # print(team_one_extra_names)
         # print(team_one_extra)
@@ -557,6 +723,14 @@ class VerdictProcessor:
         # print(team_two)
         # print(team_two_extra)
         # print(team_two_extra_names)
+        # print(verdict_lawyer_area)
+        # print("team:",lawyers_teams)
+        # print("lawyers:", lawyers)
+        # for i in lawyers_teams:
+        #     if i in remove_extra_spaces(text):
+        #         print("in text")
+        #     else:
+        #         print("not in text")
 
         team_one_lawyers_team_name = []
         team_two_lawyers_team_name = []
@@ -605,7 +779,7 @@ class VerdictProcessor:
         judges_genders = await self.process_list_to_str(judges_genders)
 
         # print(verdict_team_2_area)
-
+        
 
 
 
@@ -634,6 +808,9 @@ class VerdictProcessor:
             self.COLUMNS_LAWYERS_TEAMS:lawyers_teams,
             self.COLUMNS_LAWYERS:lawyers,
             self.COLUMNS_TEXT:text,
+
+            # self.COLUMNS_ALL_LAWYERS_TEAMS:team_lawyers_teams_names,
+            # self.COLUMNS_ALL_LAWYERS_TEAMS_EXTRA:lawyers_extra,
         }
         return columns
         

@@ -8,7 +8,7 @@ class Config:
     DOWNLOAD = True
     MAX_FILES_TO_DOWNLOAD_FROM_QUERY = 100 # max of files to download for the chosen query , its doesnt iterate , for the same query if the files already downloaded , it wont redownload, if u put bigger number it just add the files you didnt have
     TEST = True # not asking for input
-    OVERRIDE_EXISTING = False
+    OVERRIDE_EXISTING = True
     REDOWNLOAD_EXISITING = False
 
     QUERY_TEST_INPUT = "דירות"
